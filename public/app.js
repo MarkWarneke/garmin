@@ -245,9 +245,12 @@ function howItWorks() {
 }
 function folderBanner() {
   if (!cloudWorkspace || cloudWorkspace.connected) return '';
-  return `<section class="connect-banner"><div class="banner-mark">↗</div><div><h2>${cloudWorkspace.supported ? 'Open your local training folder.' : 'Open Cadence in Chrome or Edge.'}</h2><p>${cloudWorkspace.supported ? 'Choose an existing Cadence data folder to resume, or an empty folder for your first sync. Each browser needs its own folder permission.' : 'This version saves directly to your filesystem and needs a browser with folder access.'}</p></div><button class="button" data-folder ${cloudWorkspace.supported ? '' : 'disabled'}>Choose data folder ↗</button></section>`;
+  if (!cloudWorkspace.supported) return `<section class="connect-banner"><div class="banner-mark">!</div><div><h2>This browser cannot save your data.</h2><p>Cadence needs Chrome or Edge on a desktop or laptop to save your history to a folder. You can look around, but syncing is not available here.</p></div><button class="button" data-unsupported>Why? ↗</button></section>`;
+  return `<section class="connect-banner"><div class="banner-mark">↗</div><div><h2>Open your local training folder.</h2><p>Choose an existing Cadence data folder to resume, or an empty folder for your first sync. Each browser needs its own folder permission.</p></div><button class="button" data-folder>Choose data folder ↗</button></section>`;
 }
 async function chooseFolder() {
+  // Without folder access (phones, Safari, Firefox) every save action explains why instead of failing silently.
+  if (!cloudWorkspace.supported) return $('#unsupported-dialog').showModal();
   if (busy) return notify('Wait for the current sync to finish before changing folders.');
   try {
     await cloudWorkspace.choose(); clearSnapshotPath(); await reload();
@@ -258,7 +261,7 @@ async function chooseFolder() {
 function cloudConnection() {
   const folder = cloudWorkspace.name, connected = !!getKey();
   return heading('YOUR FILES. YOUR TRAINING.', 'Open a folder. Pick up where you left off.', 'The app runs on Cloudflare. Your training history lives in files on your device.', false) + warnings()
-    + `<section class="card panel"><p class="eyebrow">LOCAL WORKSPACE</p><h2>${folder ? 'Connected to ' + escapeHtml(folder) : 'Choose your training data folder.'}</h2><p>Select the folder containing your existing snapshot.json, or choose an empty folder. You can open that same folder in another Chrome or Edge browser to resume your saved history. No Garmin key is needed to read saved data.</p><div class="setting-row"><div><strong>${folder ? escapeHtml(folder) + '/snapshot.json' : 'No local folder selected'}</strong><p>The browser asks for read/write permission. IndexedDB remembers only the folder handle; your training records stay in the file.</p></div><div class="export-actions"><button class="button button-secondary" data-folder ${busy || !cloudWorkspace.supported ? 'disabled' : ''}>${folder ? 'Change folder' : 'Choose data folder'} ↗</button>${folder ? '<button class="button button-quiet" id="forget-folder">Disconnect folder</button>' : ''}</div></div></section>`
+    + `<section class="card panel"><p class="eyebrow">LOCAL WORKSPACE</p><h2>${folder ? 'Connected to ' + escapeHtml(folder) : 'Choose your training data folder.'}</h2><p>Select the folder containing your existing snapshot.json, or choose an empty folder. You can open that same folder in another Chrome or Edge browser to resume your saved history. No Garmin key is needed to read saved data.</p><div class="setting-row"><div><strong>${folder ? escapeHtml(folder) + '/snapshot.json' : 'No local folder selected'}</strong><p>The browser asks for read/write permission. IndexedDB remembers only the folder handle; your training records stay in the file.</p></div><div class="export-actions"><button class="button button-secondary" data-folder ${busy ? 'disabled' : ''}>${folder ? 'Change folder' : 'Choose data folder'} ↗</button>${folder ? '<button class="button button-quiet" id="forget-folder">Disconnect folder</button>' : ''}</div></div></section>`
     + `<section class="card panel"><p class="eyebrow">GARMIN VIA CLOUDFLARE</p><h2>${connected ? 'Key saved in this browser.' : 'Connect Garmin when you want fresh data.'}</h2><p>Anyone can use Cadence with their own Garmin Personal API key and local data folder. Your key and downloaded responses pass through Cloudflare temporarily. No training database or saved Garmin key is configured in the cloud.</p><div class="export-actions"><button class="button button-secondary" data-connect>${connected ? 'Change key' : 'Connect Garmin'} ↗</button>${connected ? '<button class="button button-quiet" id="forget-key">Forget key</button>' : ''}<button class="button button-quiet" id="full-sync" ${busy ? 'disabled' : ''}>Re-fetch full history ↻</button></div>${data.sync ? `<details><summary>Latest sync details</summary><p>Completed ${escapeHtml(new Date(data.sync.completedAt).toLocaleString('en-GB'))}. ${data.sync.fullySuccessful ? 'All requested datasets downloaded.' : 'See the sync warnings for unavailable data.'}</p></details>` : ''}</section>`
     + howItWorks();
 }
@@ -410,6 +413,7 @@ document.addEventListener('click', async event => {
   if (button.classList.contains('skip-link')) { event.preventDefault(); $('#content').focus(); return; }
   if (button.matches('[aria-disabled="true"]')) return event.preventDefault();
   if (button.hasAttribute('data-folder')) return chooseFolder();
+  if (button.hasAttribute('data-unsupported')) return $('#unsupported-dialog').showModal();
   if (button.id === 'forget-folder') { await cloudWorkspace.forget(); clearSnapshotPath(); await reload(); notify('Folder disconnected. Your files are unchanged.'); return; }
   if (cloudWorkspace && button.matches('a[href^="/api/export"]')) {
     event.preventDefault();
@@ -490,6 +494,9 @@ try {
   if (bootstrap.mode === 'cloud') {
     const { FolderWorkspace } = await import('./folder-workspace.mjs');
     cloudWorkspace = new FolderWorkspace(); await cloudWorkspace.restore();
+    if (!cloudWorkspace.supported && session.get('cadence.unsupportedSeen') !== 'true') {
+      session.set('cadence.unsupportedSeen', 'true'); $('#unsupported-dialog').showModal();
+    }
     $('.local-status strong').textContent = 'Files on your device';
     $('.local-status div span').textContent = 'Your folder · Your Garmin key';
     $('.sidebar-note p').textContent = 'Your training history lives in a folder you choose. Open the same folder in another browser to continue.';
