@@ -26,3 +26,7 @@ test('the generated prompt states provided details and asks for missing essentia
   const text = planHandoff('My edited prompt  ', { range: { days: 7 } });
   assert.ok(text.startsWith('My edited prompt\n\nGarmin data (JSON):\n{'));
 });
+test('long free-text answers are kept, not cut to a few sentences', () => {
+  const goal = 'Build towards a gran fondo. '.repeat(80);
+  assert.equal(normalizeProfile({ goal }).goal, goal.trim());
+});

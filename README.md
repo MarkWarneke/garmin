@@ -1,93 +1,129 @@
 # Cadence
 
-A Garmin activity and health dashboard built with **HyperUI application components and Tailwind CSS**. Run it locally on your Mac or deploy the UI and API relay together to **Cloudflare Workers**. Training history stays in local JSON files in both modes. Neither requires an MCP server or an OpenAI API key.
+A personal Garmin training and recovery dashboard. Cadence downloads your activities, sleep, HRV, and daily health from the [Garmin Connect Personal API](https://developer.garmin.com/gc-developer-program/personal/personal-api/), shows them together, and helps you turn them into a training plan with ChatGPT or Claude.
 
-For GitHub Actions deployment, follow [CLOUDFLARE.md](CLOUDFLARE.md). The hosted app is public and requires no Cloudflare sign-in. Each visitor uses Chrome/Edge to select their own local folder and enters their own Garmin Personal API key. Garmin credentials and data pass through the Worker during syncing, with no cloud database configured.
+Your training history stays in plain JSON files on your own computer. There is no account, no database, and nothing is sent to an AI assistant unless you copy it there yourself.
 
-The current version sets up data access and visualization. Training goals, the coaching agent, and personalized plan generation are deferred. The training calendar is an empty workspace, not a generated plan.
+**Try it:** [garmin-cadence.warneke-mark.workers.dev](https://garmin-cadence.warneke-mark.workers.dev/) (Chrome or Edge, with your own Garmin Personal API key).
 
-## Start
+## How it works
 
-Requires Node.js 24 or newer. Double-click **Start Cadence.command**, or run:
+Cadence runs in one of two modes. Both use the same UI and save the same files.
+
+| | Hosted (Cloudflare Workers) | Local (Node.js) |
+| --- | --- | --- |
+| Where the app runs | Cloudflare serves the page; a small Worker relays Garmin requests | A Node server on your computer, bound to `127.0.0.1` |
+| Where data is saved | A folder you choose in Chrome/Edge (File System Access API) | `data/` in the project, or `CADENCE_DATA_DIR` |
+| What you need | Chrome or Edge | Node.js 24+ |
+
+The data flow is the same in both modes:
+
+1. **Your key stays in the browser tab.** The Garmin Personal API key is kept in the tab's `sessionStorage` and is never written to disk. **Forget key** removes it.
+2. **Cadence talks to Garmin.** The key is exchanged for a short-lived access token, then activities, daily summaries, sleep, and HRV are downloaded. In hosted mode, each request passes through the Worker because Garmin does not accept requests from web pages directly. The Worker forwards a fixed allowlist of Garmin operations, stores nothing, and has no database or request logging.
+3. **Only normalized summaries are saved** to `snapshot.json`. No GPS routes, FIT files, account details, or credentials.
+4. **Your athlete profile** (goal, FTP, availability, restrictions) is saved separately in `profile.json`, next to `snapshot.json`. A sync never touches it.
+5. **You decide what an assistant sees.** The Training plan dialog builds a prompt you can read and edit before copying it.
+
+### Syncing
+
+The first sync downloads the selected range (90 days by default). Later syncs reuse saved history and download only what is missing:
+
+- the days since the last sync, plus the last synced week again (late uploads and recalculated sleep),
+- older days when you choose a longer range,
+- date windows that failed last time, for that data type only.
+
+**Data & connection → Re-fetch full history** reloads the whole range.
+
+### What is downloaded
+
+- **Activities:** sport, start time, duration, distance, elevation, calories, heart rate, Garmin training load and effects, average/normalized/max power, best 5 s, 1, 5, 20 and 60-minute power, intensity factor, cadence, VO2max, and time in each heart rate and power zone.
+- **Daily health:** resting heart rate, steps, stress, Body Battery.
+- **Sleep and HRV:** duration, stages, sleep score, overnight HRV and status.
+- **Sync coverage** and per-request warnings.
+
+Missing values stay `null`, never zero, and charts leave gaps. Ramp tests (activities named "…Ramp…") get an FTP estimate of 75% of the best one-minute power. An FTP you enter in your profile takes precedence.
+
+## Run locally
+
+Requires Node.js 24 or newer.
 
 ```sh
-cd /Users/mark/Documents/ChatGPT/training
+git clone https://github.com/MarkWarneke/garmin.git cadence
+cd cadence
 npm start
 ```
 
-Open **http://127.0.0.1:8787** and click **Connect Garmin**. Enter your Personal API key in that local form. Do not put it in chat, source files, shell arguments, or an `.env` file.
+On macOS you can also double-click **Start Cadence.command**. Open <http://127.0.0.1:8787>, click **Connect Garmin**, and paste your [Personal API key](https://connect.garmin.com/app/settings/personalApiToken). Enter it only in that form, never in chat, source files, shell arguments, or `.env` files.
 
-The first sync fetches the selected history range (90 days by default). Refreshing the page syncs again while the session key is available. Later syncs reuse saved history and download only what is missing: the days since the last sync plus its final week (late uploads and recalculated sleep), older days when you choose a longer range, and windows that failed last time. Entering a new key does not re-download saved history. **Data & connection → Re-fetch full history** refreshes the whole selected range.
+Keep the terminal open while using the app; Control-C stops it. Set `PORT` to use another port, and `CADENCE_DATA_DIR` to save data elsewhere. Data files are written atomically with mode `0600` in a `0700` directory. `data/` is ignored by Git.
 
-Keep the terminal open. Control-C stops the server. Set `PORT` if 8787 is occupied. Use the same hostname and port each time; browser session storage is scoped to the origin and tab.
+## Get a training plan from ChatGPT or Claude
 
-## What is downloaded
+Open **Training plan → Create plan prompt**:
 
-- Activity summaries: sport, local/UTC start, duration, distance, heart rate, elevation, calories, training load and effects where Garmin supplies them.
-- Daily health summaries: resting heart rate, steps, Garmin stress, and Body Battery.
-- Sleep duration, sleep stages, sleep score, and overnight HRV where recorded.
-- Sync coverage and per-source errors, including unavailable datasets.
+1. Fill in the short form: goal, event, FTP, heart rate, weight, availability, sports, equipment, and restrictions. Each field explains why it is needed. Leave anything blank and the assistant will ask.
+2. Review the generated prompt and edit it if you like. Your answers and edits are saved to `profile.json`.
+3. Copy it. Cadence adds your Garmin data for the selected range below the prompt.
 
-Missing and Garmin negative sentinel values remain `null`, not zero. Charts leave gaps for missing measurements. Latest readings show their measurement date. A successful API request with no records does not imply that a metric was measured. Today's data may be incomplete.
+**Include local snapshot link** is for the ChatGPT or Claude desktop app on the same computer with local file access allowed. It adds a `file://` link to the complete `snapshot.json` and `profile.json` (local mode), or names your selected folder (hosted mode, because browsers do not reveal full folder paths).
 
-Garmin can also return an empty successful response for periods with no measurements, especially older HRV history. Cadence treats that as no recorded data. Nonempty malformed JSON still produces a sync warning.
+### Optional: MCP access for desktop assistants
 
-No raw FIT files, routes, profile details, or Garmin credentials are stored. Activity records are updated by ID; deleting an activity in Garmin does not automatically remove an older cached record here. Full re-fetch updates existing records and retrieves missing ones.
-
-## Credential and data storage
-
-The **personal key** is stored in this tab's `sessionStorage`, so page refreshes retain it. It is never written by the backend to disk. The browser normally discards it when the tab closes, although browser session restore can preserve session storage. **Forget key** explicitly removes the key from the tab. The app falls back to page memory if session storage is blocked.
-
-Garmin keys can be configured to expire after 30, 90, or 180 days, or one year. Garmin access tokens last at most 24 hours. The backend generates a token at the beginning of each sync; it keeps the key and token only in memory for that request and clears references afterward.
-
-Downloaded history is stored as normalized JSON in `data/snapshot.json` (directory mode `0700`, file mode `0600`), with atomic replacement. It remains on this Mac between browser sessions. `data/` is ignored by Git. To use another data directory, set `CADENCE_DATA_DIR` for the app and any optional MCP client.
-
-The HTTP server binds only to `127.0.0.1`, rejects foreign Host/Origin headers, and requires a per-process request token for syncing. The UI loads no external scripts, fonts, or analytics. Garmin response bodies are not echoed into error messages.
-
-Each sync obtains the current local request token, so restarting the server does not require re-entering the Garmin key. If the server is stopped, the UI points you to `Start Cadence.command` before retrying.
-
-## Use with ChatGPT and Codex
-
-**No MCP required:**
-
-- In **Data & connection** or **Training plan**, choose **Create plan prompt**. A short form asks for your goal, FTP, heart rate, weight, availability, sports, equipment, and restrictions; each field says why it is needed. The prompt is shown and editable before you copy it with your Garmin data for the selected range. Answers and any prompt edits are saved to `profile.json` next to `snapshot.json`. Nothing is automatically sent to an assistant.
-- Enable **Include local snapshot link** to add a `file:///` link to the complete saved snapshot and profile. This only works with the ChatGPT or Claude desktop app on the same computer, with local file access allowed. Synced activities include power, normalized power, best 1/5/20/60-minute power, and heart rate and power time in zones; ramp tests yield an FTP estimate (75% of best one-minute power).
-- The local server fills in the snapshot path. In the hosted app, enter the full path to `snapshot.json` in your selected folder; browsers do not reveal the full directory path. The checkbox and path are remembered in this tab's session. Choosing or disconnecting a folder clears the entered path. This feature adds a local link without uploading the file.
-- In Codex, ask it to read `/Users/mark/Documents/ChatGPT/training/data/snapshot.json`. The dashboard also provides a copyable prompt.
-
-**Optional direct desktop tools:**
-
-An optional read-only MCP adapter lets ChatGPT desktop and Codex query saved data directly. It is independent of the dashboard and never receives your Garmin key. Install dependencies once with `npm ci` if they are missing. Add a STDIO MCP server in the desktop app's MCP settings:
+A read-only MCP adapter lets ChatGPT desktop, Codex, or Claude desktop query the saved history and profile directly. It never receives your Garmin key and cannot trigger syncs. After `npm ci`, add a STDIO server in the client's MCP settings:
 
 ```text
-Command: the absolute Node executable shown under Data & connection
-Arguments: /Users/mark/Documents/ChatGPT/training/src/mcp.mjs
+Command: /absolute/path/to/node
+Arguments: /absolute/path/to/cadence/src/mcp.mjs
 ```
 
-Save and restart the client. The tools are `garmin_sync_status`, `garmin_training_overview`, `garmin_activities`, and `garmin_health_trends`. They read local snapshots; they cannot trigger Garmin syncs, write plans, or change Garmin data. The MCP client does not require the dashboard process to be running to read saved history. Enabling these tools shares the requested history with the client when you use them.
+Both paths are shown under **Data & connection** in the local app. Tools: `garmin_sync_status`, `garmin_training_overview`, `garmin_activities`, `garmin_health_trends`, and `athlete_profile`.
 
-Alternatively, this configuration can be merged into a trusted project's Codex configuration. It is a sample; this repository does not change your installed MCP settings:
+## Fork and run your own copy
 
-```toml
-[mcp_servers.cadence]
-command = "/absolute/path/to/node"
-args = ["/Users/mark/Documents/ChatGPT/training/src/mcp.mjs"]
-```
+1. **Fork** [MarkWarneke/garmin](https://github.com/MarkWarneke/garmin) on GitHub and clone your fork.
+2. **Install and test:**
 
-## Development and validation
+   ```sh
+   npm ci
+   npm test
+   ```
 
-The dashboard uses HTML and browser JavaScript, with HyperUI application patterns for navigation, stats, tables, forms, badges, and dialogs. Tailwind CSS 4.3 compiles `styles/app.css` to `public/styles.css` locally. There is no CDN or browser-side Tailwind runtime. The compiled CSS is checked in so the dashboard can start directly without a build. See `THIRD_PARTY_NOTICES.md` for HyperUI attribution and its MIT license.
+3. **Develop locally.** Run `npm run dev` (restarts the server on changes) and, in a second terminal, `npm run dev:css` (recompiles Tailwind). Refresh the browser to see changes. To try the hosted mode locally, run `npm run build` and then `npm run dev:cloudflare`, which serves the Worker at <http://127.0.0.1:8790>.
+4. **Make it yours.** In `wrangler.json`, change `name` (it becomes `<name>.<your-subdomain>.workers.dev`). In `public/app.js`, point `REPOSITORY` to your fork. Update the "Try it" link above.
+5. **Deploy** to your own Cloudflare account with the included GitHub Actions workflow. See [CLOUDFLARE.md](CLOUDFLARE.md). You need two repository secrets, no Garmin key, and no paid plan.
 
-The local server uses Node built-ins. Shared Garmin and data-model modules also run in the browser for the hosted version. Its public Worker relays a fixed allowlist of Garmin operations using only the credential supplied with each request. It restricts browser origins, query sizes, dates and pagination; it has no saved user sessions or history endpoint. The optional MCP adapter uses the official MCP SDK and Zod. `npm run dev` watches local backend files. Run `npm run dev:css` in a second terminal while editing the UI, then refresh the browser. `npm run build` compiles CSS and prepares a source-only allowlisted Cloudflare asset directory.
+### Project layout
+
+| Path | What it does |
+| --- | --- |
+| `public/` | The UI: `index.html`, `app.js`, compiled `styles.css` |
+| `public/shared/` | Code shared by browser, Worker, and Node: Garmin client and sync (`garmin.mjs`), data model (`model.mjs`), profile and prompt (`profile.mjs`), snapshot links (`handoff.mjs`) |
+| `public/folder-workspace.mjs` | Hosted mode: reads and writes the chosen local folder |
+| `src/server.mjs`, `src/data.mjs` | Local mode: HTTP server and file storage |
+| `src/worker.mjs` | Hosted mode: Cloudflare Worker that serves the UI and relays Garmin requests |
+| `src/mcp.mjs` | Optional read-only MCP adapter |
+| `styles/app.css` | Tailwind source; compiled to `public/styles.css`, which is checked in so `npm start` needs no build |
+| `test/` | Node test runner suites with synthetic Garmin responses |
+
+The UI uses plain JavaScript with [HyperUI](https://www.hyperui.dev/) patterns and Tailwind CSS 4, with no external scripts, fonts, or analytics. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+### Tests
 
 ```sh
-npm ci
-npm run build
-npm test
+npm test                    # unit and integration tests
+npm run build               # compile CSS and prepare the Cloudflare assets
+npm run check:cloudflare    # dry-run the Worker deployment
 ```
 
-Tests use synthetic Garmin responses and temporary data directories. They cover documented DTO shapes, units and nulls, pagination, incremental sync, partial failures, credential redaction, retry/reauthentication, local HTTP restrictions, persistence permissions, export filtering, and a real MCP stdio client/server exchange. Local HTTP tests need permission to bind a loopback port in restricted environments. No test contacts a live Garmin account.
+Tests use synthetic Garmin responses and temporary directories, and never contact a real Garmin account. They cover data shapes and missing values, pagination, incremental sync planning, partial failures, credential redaction, re-authentication, the local server's origin and request-token checks, file permissions, the Worker relay's restrictions, folder storage, the profile and prompt, and a real MCP client/server exchange. The local server tests need permission to bind a loopback port.
 
-API endpoints and DTOs were checked against Garmin's published Personal API Swagger schema and [official Python client](https://github.com/garmin/connect-personal-api-python) on 2026-11-16. The token endpoint returns a raw token with `Accept: */*`; data endpoints return JSON. A real account sync still requires entering your key in the local UI.
+## Security notes
 
-References: [Garmin Personal API](https://developer.garmin.com/gc-developer-program/personal/personal-api/), [Garmin authentication FAQ](https://developer.garmin.com/gc-developer-program/personal/personal-faq), [Garmin Swagger docs](https://developer.garmin.com/gc-developer-program/personal/swagger-docs/), [ChatGPT desktop and Codex MCP setup](https://learn.chatgpt.com/docs/extend/mcp?surface=desktop).
+- The local server accepts only `127.0.0.1`/`localhost` Host and Origin headers and requires a per-process token for writes.
+- The Worker accepts only same-origin requests, a fixed set of Garmin operations, bounded dates and page sizes, and never echoes Garmin error bodies.
+- Garmin keys can be set to expire after 30, 90, or 180 days, or one year. Access tokens last at most 24 hours.
+- Activity names from Garmin are treated as untrusted data in every prompt.
+
+## References
+
+[Garmin Personal API](https://developer.garmin.com/gc-developer-program/personal/personal-api/) · [Authentication FAQ](https://developer.garmin.com/gc-developer-program/personal/personal-faq) · [Swagger docs](https://developer.garmin.com/gc-developer-program/personal/swagger-docs/) · [Official Python client](https://github.com/garmin/connect-personal-api-python) · [MCP setup for ChatGPT desktop and Codex](https://learn.chatgpt.com/docs/extend/mcp?surface=desktop)
