@@ -160,6 +160,8 @@
   .line-legend { @apply mt-3 flex justify-between text-[10px] text-gray-400; }
   .health-empty { @apply flex h-32 items-center justify-center border-b border-gray-200 text-xs text-gray-400; }
   .split-bottom { @apply mt-6 grid gap-6 lg:grid-cols-2; }
+  .plan-single { @apply mt-6; }
+  .plan-single .plan-steps { @apply lg:grid-cols-3; }
   .next-card { @apply border-emerald-100 bg-emerald-50/70; }
   .next-card .eyebrow { @apply text-emerald-700; }
   .next-card h3 { @apply text-lg font-medium tracking-tight text-emerald-950; }

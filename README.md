@@ -18,7 +18,7 @@ Cadence runs in one of two modes. Both use the same UI and save the same files.
 
 The data flow is the same in both modes:
 
-1. **Your key stays in the browser tab.** The Garmin Personal API key is kept in the tab's `sessionStorage` and is never written to disk. **Forget key** removes it.
+1. **Your key stays in your browser.** The Garmin Personal API key is saved in the browser's `localStorage` for this site, so you enter it once. It is never written to a file or sent anywhere except Garmin. **Forget key** removes it. Anyone with access to your browser profile can use it, so forget it on shared computers.
 2. **Cadence talks to Garmin.** The key is exchanged for a short-lived access token, then activities, daily summaries, sleep, and HRV are downloaded. In hosted mode, each request passes through the Worker because Garmin does not accept requests from web pages directly. The Worker forwards a fixed allowlist of Garmin operations, stores nothing, and has no database or request logging.
 3. **Only normalized summaries are saved** to `snapshot.json`. No GPS routes, FIT files, account details, or credentials.
 4. **Your athlete profile** (goal, FTP, availability, restrictions) is saved separately in `profile.json`, next to `snapshot.json`. A sync never touches it.
@@ -123,6 +123,7 @@ Tests use synthetic Garmin responses and temporary directories, and never contac
 - The Worker accepts only same-origin requests, a fixed set of Garmin operations, bounded dates and page sizes, and never echoes Garmin error bodies.
 - Garmin keys can be set to expire after 30, 90, or 180 days, or one year. Access tokens last at most 24 hours.
 - Activity names from Garmin are treated as untrusted data in every prompt.
+- A strict Content Security Policy allows only Cadence's own scripts, which limits what could read the saved key.
 
 ## License
 

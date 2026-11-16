@@ -47,7 +47,15 @@ const session = {
   set: (name, value) => { try { sessionStorage.setItem(name, value); return true; } catch { return false; } },
   remove: name => { try { sessionStorage.removeItem(name); } catch {} },
 };
-const getKey = () => session.get('cadence.garminKey') || memoryKey;
+// The Garmin key is remembered in this browser (localStorage) until Forget key. Strict CSP limits which scripts can read it.
+const browser = {
+  get: name => { try { return localStorage.getItem(name); } catch { return null; } },
+  set: (name, value) => { try { localStorage.setItem(name, value); return true; } catch { return false; } },
+  remove: name => { try { localStorage.removeItem(name); } catch {} },
+};
+// Keys saved by earlier versions in the tab session move to browser storage once.
+if (!browser.get('cadence.garminKey') && session.get('cadence.garminKey') && browser.set('cadence.garminKey', session.get('cadence.garminKey'))) session.remove('cadence.garminKey');
+const getKey = () => browser.get('cadence.garminKey') || memoryKey;
 let includeSnapshotLink = session.get('cadence.includeSnapshotLink') === 'true';
 let snapshotPath = session.get('cadence.snapshotPath') || '';
 const getSnapshotPath = () => cloudWorkspace ? snapshotPath : bootstrap?.dataFile || '';
@@ -106,7 +114,7 @@ function stat(label, value, unit, caption, mark) {
 function connectionBanner() {
   if (cloudWorkspace && !cloudWorkspace.connected) return '';
   if (getKey()) return '';
-  return `<section class="connect-banner"><div class="banner-mark">↗</div><div><h2>${data.sync ? 'Your history is here. Connect to bring it up to date.' : 'Good training starts with the whole picture.'}</h2><p>${data.sync ? 'Your session key is no longer available. Enter it again to sync the latest data.' : 'Connect Garmin to see your activities, sleep, and recovery together. Your key stays in this browser session.'}</p></div><button class="button" data-connect>Connect Garmin <span>↗</span></button></section>`;
+  return `<section class="connect-banner"><div class="banner-mark">↗</div><div><h2>${data.sync ? 'Your history is here. Connect to bring it up to date.' : 'Good training starts with the whole picture.'}</h2><p>${data.sync ? 'No Garmin key is saved in this browser. Enter it again to sync the latest data.' : 'Connect Garmin to see your activities, sleep, and recovery together. Your key is saved only in this browser.'}</p></div><button class="button" data-connect>Connect Garmin <span>↗</span></button></section>`;
 }
 function warnings() {
   let html = lastError ? `<div class="warning error-banner" role="alert">${escapeHtml(lastError)}</div>` : '';
@@ -172,7 +180,7 @@ function overview() {
     + `<div class="stat-grid">${stat('Time in motion', data.sync ? duration(data.summary.durationSeconds) : '—', '', `Last ${range} days · recorded activities`, 'time')}${stat('Training sessions', data.sync ? numeric(data.summary.activities) : '—', '', data.sync ? km(data.summary.distanceMeters) + ' km covered in this period' : 'Bike, gym, and everything in between', 'activities')}${stat('Latest sleep', duration(latest('sleepSeconds')?.sleepSeconds ?? null), '', metricCaption('sleepSeconds'), 'sleep')}${stat('Overnight HRV', numeric(latest('hrvMs')?.hrvMs ?? null), 'ms', metricCaption('hrvMs'), 'hrv')}</div>`
     + `<div class="content-grid"><section class="card"><div class="card-heading"><div><h2>A week in motion</h2><p class="sub">${dayLabel(shiftDay(data.range.endDate, -6))} – ${dayLabel(data.range.endDate)} · duration by sport</p></div><span class="pill">LAST 7 DAYS</span></div><div class="card-inner">${weeklyChart()}</div></section>${recovery()}</div>`
     + activityTable(data.activities.slice(0, 5))
-    + `<div class="split-bottom"><section class="card next-card"><div class="card-inner"><p class="eyebrow">THE NEXT CHAPTER</p><h3>Make room for your next goal.</h3><p>Bike, gym, bouldering. A training plan that fits your life starts with understanding where you are today.</p><button class="text-button" data-route="plan">Your training workspace <span>↗</span></button></div></section><section class="card export-card"><div class="card-inner"><h3>Start a conversation about your training.</h3><p>Take a structured summary into ChatGPT, or let Codex work with your saved local data. You choose what to share.</p><div class="export-actions"><button class="button button-secondary" data-plan ${!data.sync ? 'disabled' : ''}>Create plan prompt ↗</button><button class="text-button" data-route="connection">How it works</button></div></div></section></div>`;
+    + `<div class="split-bottom"><section class="card next-card"><div class="card-inner"><p class="eyebrow">THE NEXT CHAPTER</p><h3>Make room for your next goal.</h3><p>Bike, gym, bouldering. A training plan that fits your life starts with understanding where you are today.</p><button class="text-button" data-route="plan">Your training workspace <span>↗</span></button></div></section><section class="card export-card"><div class="card-inner"><h3>Start a conversation about your training.</h3><p>Take a structured summary into ChatGPT, or let Codex work with your saved local data. You choose what to share.</p><div class="export-actions"><button class="button button-secondary" data-plan ${!data.sync ? 'disabled' : ''}>Create plan prompt ↗</button><button class="text-button" data-route="plan">How it works</button></div></div></section></div>`;
 }
 function activities() {
   const items = data.activities.filter(a => (activitySport === 'all' || category(a.sport) === activitySport)
@@ -189,17 +197,31 @@ function health() {
       return `<section class="card"><div class="card-heading"><h2>${m.label}</h2><span class="stat-icon">${icon(m.mark)}</span></div><div class="card-inner"><div class="health-metric-top"><div><div class="health-value">${m.format(row?.[m.field] ?? null)} <small>${m.unit}</small></div><p class="health-caption">${metricCaption(m.field)}</p></div><span class="pill">${measured.length} MEASURED DAYS</span></div><div class="line-chart">${sparkline(m.field, m.color)}</div><div class="line-legend"><span>${dayLabel(shiftDay(data.range.endDate, 1 - Math.min(range, 90)))}</span><span>${dayLabel(data.range.endDate)}</span></div><p class="health-caption">${chartRange}${m.caption} · ${range > 90 ? 'chart shows latest 90 days' : 'gaps indicate missing measurements'}</p></div></section>`;
     }).join('')}</div>`;
 }
+// Setup help appears only while something is missing: a folder (hosted), a Garmin key, or a first sync.
+function planCards() {
+  const folderMissing = cloudWorkspace && !cloudWorkspace.connected;
+  const ready = data.sync && getKey() && !folderMissing;
+  const steps = [['Answer a few questions.', 'Goal, FTP, heart rate, and the time you have. Each field says why it matters; skip anything and the assistant will ask.'],
+    ['Review the prompt.', 'You see exactly what will be shared and can edit it. Your answers are saved to profile.json next to your data.'],
+    ['Paste it into ChatGPT or Claude.', 'Cadence adds your Garmin data for the selected range. Nothing is sent automatically.']];
+  const planCard = `<section class="card panel"><h2>Your data, ready to discuss.</h2><p>Turn your Garmin history into a concrete, week-by-week plan with ChatGPT or Claude.</p><ol class="how-list plan-steps">${steps.map(([title, text]) => `<li><strong>${title}</strong><p>${text}</p></li>`).join('')}</ol><div class="export-actions"><button class="button button-primary" data-plan ${!data.sync ? 'disabled' : ''}>Create plan prompt ↗</button></div>${data.sync ? '' : '<p class="field-hint">Sync your Garmin data first.</p>'}</section>`;
+  if (ready) return `<div class="plan-single">${planCard}</div>`;
+  const [title, text, action] = folderMissing ? ['Choose your data folder.', 'Cadence saves your history to a folder on this computer. Pick an empty folder, or one with an existing snapshot.json.', '<button class="button button-secondary" data-folder>Choose data folder ↗</button>']
+    : !getKey() ? [data.sync ? 'Reconnect Garmin for fresh data.' : 'Get the foundation in place.', data.sync ? 'Your saved history is here. Enter your key again to bring it up to date before planning.' : 'Sync your recent training and recovery history first. That gives the conversation context, without guessing your goals.', '<button class="button button-secondary" data-connect>Connect Garmin ↗</button>']
+    : ['Run your first sync.', 'Download your recent training and recovery history to give the plan context.', '<button class="button button-secondary" id="full-sync">Sync Garmin ↻</button>'];
+  return `<div class="split-bottom"><section class="card panel"><h2>${title}</h2><p>${text}</p><div class="export-actions">${action}</div></section>${planCard}</div>`;
+}
 function plan() {
   const end = data.range.endDate, weekday = new Date(end + 'T12:00:00Z').getUTCDay();
   const monday = shiftDay(end, -((weekday + 6) % 7));
-  return heading('A PLAN THAT FITS YOUR LIFE', 'Your next block starts here.', 'For now, bring your data together. We’ll shape the training around your goals later.', false)
-    + `<section class="card"><div class="card-heading"><div><h2>Your training calendar</h2><p class="sub">${dayLabel(monday)} – ${dayLabel(shiftDay(monday, 6))}</p></div><span class="pill orange">NO PLAN YET</span></div><div class="timeline">${Array.from({ length: 7 }, (_, i) => { const date = shiftDay(monday, i); return `<div class="calendar-day"><span>${dayLabel(date, { weekday: 'short' })}</span><b>${dayLabel(date, { day: 'numeric' })}</b><i></i></div>`; }).join('')}</div><div class="calendar-note"><strong>Good plans begin with a conversation.</strong>When you’re ready, we’ll discuss your goals, available time, and how bike, gym, and bouldering fit together.</div></section><div class="split-bottom"><section class="card panel"><h2>Get the foundation in place.</h2><p>Sync your recent training and recovery history first. That gives the conversation context, without guessing your goals or prescribing a schedule.</p><div class="export-actions"><button class="button button-secondary" data-connect>${getKey() ? 'Manage connection' : 'Connect Garmin'} ↗</button></div></section><section class="card panel"><h2>Your data, ready to discuss.</h2><p>Tell the assistant your goal, FTP, and available time, then copy a prompt with your Garmin data into ChatGPT or Claude.</p><div class="export-actions"><button class="button button-secondary" data-plan ${!data.sync ? 'disabled' : ''}>Create plan prompt ↗</button></div></section></div>`;
+  return heading('A PLAN THAT FITS YOUR LIFE', 'Your next block starts here.', 'Tell ChatGPT or Claude what your data can’t, and get a plan built around your goals.', false)
+    + `<section class="card"><div class="card-heading"><div><h2>Your training calendar</h2><p class="sub">${dayLabel(monday)} – ${dayLabel(shiftDay(monday, 6))}</p></div><span class="pill orange">NO PLAN YET</span></div><div class="timeline">${Array.from({ length: 7 }, (_, i) => { const date = shiftDay(monday, i); return `<div class="calendar-day"><span>${dayLabel(date, { weekday: 'short' })}</span><b>${dayLabel(date, { day: 'numeric' })}</b><i></i></div>`; }).join('')}</div><div class="calendar-note"><strong>Good plans begin with a conversation.</strong>When you’re ready, we’ll discuss your goals, available time, and how bike, gym, and bouldering fit together.</div></section>` + planCards();
 }
 function connection() {
   if (cloudWorkspace) return cloudConnection();
   const connected = !!getKey();
   return heading('CONNECTED, ON YOUR TERMS', 'A connection you control.', 'Your Garmin key, sync, and saved data, all in one place.', false) + warnings()
-    + `<section class="card panel"><p class="eyebrow">GARMIN CONNECT PERSONAL API</p><h2>${connected ? 'Ready to keep your history up to date.' : 'Connect your Garmin account.'}</h2><p>Paste your personal API key once per tab session. Cadence exchanges it for an access token and downloads activity, sleep, HRV, and daily health summaries. Opening or refreshing this tab syncs the latest data while the key is available.</p><div class="setting-row"><div><strong>${connected ? 'Key available in this session' : 'No key in this session'}</strong><p>Key expiry and storage are separate: Garmin keys can last 30 days to a year; this app keeps yours in the tab’s session.</p></div><div class="export-actions"><button class="button button-secondary" data-connect>${connected ? 'Change key' : 'Connect Garmin'} ↗</button>${connected ? '<button class="button button-quiet" id="forget-key">Forget key</button>' : ''}</div></div><div class="setting-row"><div><strong>Downloaded history stays local</strong><p>History remains available after the session ends. Keys, access tokens, account details, and GPS routes are not saved here.</p></div><button class="button button-quiet" id="full-sync" ${busy ? 'disabled' : ''}>Re-fetch full history ↻</button></div><details><summary>Latest sync details</summary>${data.sync ? `<p>Completed ${escapeHtml(new Date(data.sync.completedAt).toLocaleString('en-GB'))}. Fetched ${escapeHtml(data.sync.fetchedFrom)} through ${escapeHtml(data.sync.fetchedTo)}. ${data.sync.fullySuccessful ? 'All requested datasets were downloaded.' : 'Some requests failed; see warnings above.'}</p><p>Successful source windows: ${data.sync.coverage.length}. A successful request can return no records if a metric was not measured.</p>` : '<p>No sync has completed yet.</p>'}</details></section>`
+    + `<section class="card panel"><p class="eyebrow">GARMIN CONNECT PERSONAL API</p><h2>${connected ? 'Ready to keep your history up to date.' : 'Connect your Garmin account.'}</h2><p>Paste your personal API key once. This browser remembers it until you choose Forget key. Cadence exchanges it for an access token and downloads activity, sleep, HRV, and daily health summaries. Opening the app syncs the latest data.</p><div class="setting-row"><div><strong>${connected ? 'Key saved in this browser' : 'No key saved in this browser'}</strong><p>Key expiry and storage are separate: Garmin keys can last 30 days to a year; this app keeps yours in this browser’s local storage until you forget it.</p></div><div class="export-actions"><button class="button button-secondary" data-connect>${connected ? 'Change key' : 'Connect Garmin'} ↗</button>${connected ? '<button class="button button-quiet" id="forget-key">Forget key</button>' : ''}</div></div><div class="setting-row"><div><strong>Downloaded history stays local</strong><p>History stays on this computer. Keys, access tokens, account details, and GPS routes are not saved here.</p></div><button class="button button-quiet" id="full-sync" ${busy ? 'disabled' : ''}>Re-fetch full history ↻</button></div><details><summary>Latest sync details</summary>${data.sync ? `<p>Completed ${escapeHtml(new Date(data.sync.completedAt).toLocaleString('en-GB'))}. Fetched ${escapeHtml(data.sync.fetchedFrom)} through ${escapeHtml(data.sync.fetchedTo)}. ${data.sync.fullySuccessful ? 'All requested datasets were downloaded.' : 'Some requests failed; see warnings above.'}</p><p>Successful source windows: ${data.sync.coverage.length}. A successful request can return no records if a metric was not measured.</p>` : '<p>No sync has completed yet.</p>'}</details></section>`
     + howItWorks();
 }
 const REPOSITORY = 'https://github.com/MarkWarneke/garmin';
@@ -207,7 +229,7 @@ function howItWorks() {
   const cloud = !!cloudWorkspace;
   const step = (title, text) => `<li><strong>${title}</strong><p>${text}</p></li>`;
   const steps = [
-    step('Your key stays in this tab.', 'The Garmin Personal API key is kept in this tab’s session storage and is gone when the tab closes. It is never written to a file' + (cloud ? ' or stored on a server.' : '.')),
+    step('Your key stays in this browser.', 'The Garmin Personal API key is saved in this browser’s local storage, so you enter it once. Forget key removes it. It is never written to a file' + (cloud ? ' or stored on a server.' : '.')),
     cloud
       ? step('Garmin is reached through a relay.', 'Garmin does not accept requests from web pages directly, so the browser sends each request through Cadence’s Cloudflare Worker. It forwards the request with your key, returns Garmin’s answer, and keeps nothing: no database, no logs of requests or responses.')
       : step('This computer talks to Garmin.', 'The Cadence server on this computer exchanges your key for a short-lived access token and downloads the data directly from Garmin. It listens only on 127.0.0.1.'),
@@ -236,7 +258,7 @@ function cloudConnection() {
   const folder = cloudWorkspace.name, connected = !!getKey();
   return heading('YOUR FILES. YOUR TRAINING.', 'Open a folder. Pick up where you left off.', 'The app runs on Cloudflare. Your training history lives in files on your device.', false) + warnings()
     + `<section class="card panel"><p class="eyebrow">LOCAL WORKSPACE</p><h2>${folder ? 'Connected to ' + escapeHtml(folder) : 'Choose your training data folder.'}</h2><p>Select the folder containing your existing snapshot.json, or choose an empty folder. You can open that same folder in another Chrome or Edge browser to resume your saved history. No Garmin key is needed to read saved data.</p><div class="setting-row"><div><strong>${folder ? escapeHtml(folder) + '/snapshot.json' : 'No local folder selected'}</strong><p>The browser asks for read/write permission. IndexedDB remembers only the folder handle; your training records stay in the file.</p></div><div class="export-actions"><button class="button button-secondary" data-folder ${busy || !cloudWorkspace.supported ? 'disabled' : ''}>${folder ? 'Change folder' : 'Choose data folder'} ↗</button>${folder ? '<button class="button button-quiet" id="forget-folder">Disconnect folder</button>' : ''}</div></div></section>`
-    + `<section class="card panel"><p class="eyebrow">GARMIN VIA CLOUDFLARE</p><h2>${connected ? 'Key available in this browser session.' : 'Connect Garmin when you want fresh data.'}</h2><p>Anyone can use Cadence with their own Garmin Personal API key and local data folder. Your key and downloaded responses pass through Cloudflare temporarily. No training database or saved Garmin key is configured in the cloud.</p><div class="export-actions"><button class="button button-secondary" data-connect>${connected ? 'Change key' : 'Connect Garmin'} ↗</button>${connected ? '<button class="button button-quiet" id="forget-key">Forget key</button>' : ''}<button class="button button-quiet" id="full-sync" ${busy ? 'disabled' : ''}>Re-fetch full history ↻</button></div>${data.sync ? `<details><summary>Latest sync details</summary><p>Completed ${escapeHtml(new Date(data.sync.completedAt).toLocaleString('en-GB'))}. ${data.sync.fullySuccessful ? 'All requested datasets downloaded.' : 'See the sync warnings for unavailable data.'}</p></details>` : ''}</section>`
+    + `<section class="card panel"><p class="eyebrow">GARMIN VIA CLOUDFLARE</p><h2>${connected ? 'Key saved in this browser.' : 'Connect Garmin when you want fresh data.'}</h2><p>Anyone can use Cadence with their own Garmin Personal API key and local data folder. Your key and downloaded responses pass through Cloudflare temporarily. No training database or saved Garmin key is configured in the cloud.</p><div class="export-actions"><button class="button button-secondary" data-connect>${connected ? 'Change key' : 'Connect Garmin'} ↗</button>${connected ? '<button class="button button-quiet" id="forget-key">Forget key</button>' : ''}<button class="button button-quiet" id="full-sync" ${busy ? 'disabled' : ''}>Re-fetch full history ↻</button></div>${data.sync ? `<details><summary>Latest sync details</summary><p>Completed ${escapeHtml(new Date(data.sync.completedAt).toLocaleString('en-GB'))}. ${data.sync.fullySuccessful ? 'All requested datasets downloaded.' : 'See the sync warnings for unavailable data.'}</p></details>` : ''}</section>`
     + howItWorks();
 }
 function render() {
@@ -397,7 +419,7 @@ document.addEventListener('click', async event => {
     $('#plan-error').hidden = true;
     try { await savePlanProfile(); notify('Profile saved.'); } catch (error) { planError(error.message); }
   }
-  if (button.id === 'forget-key') { activeSync?.abort(); session.remove('cadence.garminKey'); memoryKey = ''; render(); notify('Key removed from this session. Saved training history is still available.'); }
+  if (button.id === 'forget-key') { activeSync?.abort(); browser.remove('cadence.garminKey'); session.remove('cadence.garminKey'); memoryKey = ''; render(); notify('Key removed from this browser. Saved training history is still available.'); }
   if (button.id === 'full-sync') await sync({ full: true });
 });
 document.addEventListener('change', async event => {
@@ -429,7 +451,7 @@ $('#connect-form').addEventListener('submit', async event => {
   event.preventDefault();
   const key = $('#api-key').value.trim(); const days = Number($('#sync-days').value);
   if (key.length < 8 || /[\r\n]/.test(key)) { $('#connect-error').textContent = 'Enter a valid Garmin Personal API key.'; $('#connect-error').hidden = false; return; }
-  if (!session.set('cadence.garminKey', key)) { memoryKey = key; notify('Browser session storage is unavailable. The key will last until this page reloads.'); }
+  if (!browser.set('cadence.garminKey', key)) { memoryKey = key; notify('Browser storage is unavailable. The key will last until this page reloads.'); }
   session.set('cadence.syncDays', days); $('#api-key').value = ''; $('#connect-dialog').close(); await sync({ key, days });
 });
 $('#connect-dialog').addEventListener('close', () => { $('#api-key').value = ''; });
@@ -459,7 +481,7 @@ try {
     $('.local-status div span').textContent = 'Your folder · Your Garmin key';
     $('.sidebar-note p').textContent = 'Your training history lives in a folder you choose. Open the same folder in another browser to continue.';
     $('.footer span:first-child').textContent = 'Local files · Garmin via Cloudflare';
-    $('#connect-dialog .privacy-note p').textContent = 'Your key stays in this browser session. Cloudflare temporarily processes the key and Garmin responses during syncing. Training history is saved only to your selected local folder.';
+    $('#connect-dialog .privacy-note p').textContent = 'Your key is saved only in this browser until you forget it. Cloudflare temporarily processes the key and Garmin responses during syncing. Training history is saved only to your selected local folder.';
   }
   await reload();
   if (getKey() && (!cloudWorkspace || cloudWorkspace.connected)) await sync();
