@@ -10,12 +10,8 @@ if (missing.length) {
 const config = JSON.parse(await readFile('wrangler.json', 'utf8'));
 config.main = resolve(config.main);
 config.assets.directory = resolve(config.assets.directory);
-config.vars = { ACCESS_TEAM_DOMAIN: process.env.ACCESS_TEAM_DOMAIN || '', ACCESS_AUD: process.env.ACCESS_AUD || '' };
 await mkdir('dist', { recursive: true });
 const configFile = resolve('dist/wrangler.deploy.json');
 await writeFile(configFile, JSON.stringify(config, null, 2));
-if (!config.vars.ACCESS_TEAM_DOMAIN || !config.vars.ACCESS_AUD) {
-  console.log('Cloudflare Access is not configured yet. This deployment will deny all app requests until the Access variables are set.');
-}
 const result = spawnSync(resolve('node_modules/.bin/wrangler'), ['deploy', '--config', configFile], { stdio: 'inherit', env: process.env });
 process.exit(result.status ?? 1);

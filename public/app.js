@@ -55,7 +55,9 @@ async function localFetch(path, options) {
   try { return await fetch(path, options); }
   catch (error) {
     if (error.name === 'AbortError') throw error;
-    throw new Error('Cannot reach Cadence on this Mac. Open Start Cadence.command, then try syncing again.');
+    throw new Error(['127.0.0.1', 'localhost', '[::1]'].includes(location.hostname)
+      ? 'Cannot reach Cadence on this Mac. Open Start Cadence.command, then try syncing again.'
+      : 'Cannot reach Cadence. Check your connection and try again.');
   }
 }
 async function api(path) {
@@ -195,7 +197,7 @@ function cloudConnection() {
   const folder = cloudWorkspace.name, connected = !!getKey();
   return heading('YOUR FILES. YOUR TRAINING.', 'Open a folder. Pick up where you left off.', 'The app runs on Cloudflare. Your training history lives in files on your device.', false) + warnings()
     + `<section class="card panel"><p class="eyebrow">LOCAL WORKSPACE</p><h2>${folder ? 'Connected to ' + escapeHtml(folder) : 'Choose your training data folder.'}</h2><p>Select the folder containing your existing snapshot.json, or choose an empty folder. You can open that same folder in another Chrome or Edge browser to resume your saved history. No Garmin key is needed to read saved data.</p><div class="setting-row"><div><strong>${folder ? escapeHtml(folder) + '/snapshot.json' : 'No local folder selected'}</strong><p>The browser asks for read/write permission. IndexedDB remembers only the folder handle; your training records stay in the file.</p></div><div class="export-actions"><button class="button button-secondary" data-folder ${busy || !cloudWorkspace.supported ? 'disabled' : ''}>${folder ? 'Change folder' : 'Choose data folder'} ↗</button>${folder ? '<button class="button button-quiet" id="forget-folder">Disconnect folder</button>' : ''}</div></div></section>`
-    + `<section class="card panel"><p class="eyebrow">GARMIN VIA CLOUDFLARE</p><h2>${connected ? 'Key available in this browser session.' : 'Connect Garmin when you want fresh data.'}</h2><p>The private Worker relays requests to Garmin. Your key and downloaded responses pass through Cloudflare temporarily. No training database or saved Garmin key is configured in the cloud.</p><div class="export-actions"><button class="button button-secondary" data-connect>${connected ? 'Change key' : 'Connect Garmin'} ↗</button>${connected ? '<button class="button button-quiet" id="forget-key">Forget key</button>' : ''}<button class="button button-quiet" id="full-sync" ${busy ? 'disabled' : ''}>Re-fetch full history ↻</button></div>${data.sync ? `<details><summary>Latest sync details</summary><p>Completed ${escapeHtml(new Date(data.sync.completedAt).toLocaleString('en-GB'))}. ${data.sync.fullySuccessful ? 'All requested datasets downloaded.' : 'See the sync warnings for unavailable data.'}</p></details>` : ''}</section>`
+    + `<section class="card panel"><p class="eyebrow">GARMIN VIA CLOUDFLARE</p><h2>${connected ? 'Key available in this browser session.' : 'Connect Garmin when you want fresh data.'}</h2><p>Anyone can use Cadence with their own Garmin Personal API key and local data folder. Your key and downloaded responses pass through Cloudflare temporarily. No training database or saved Garmin key is configured in the cloud.</p><div class="export-actions"><button class="button button-secondary" data-connect>${connected ? 'Change key' : 'Connect Garmin'} ↗</button>${connected ? '<button class="button button-quiet" id="forget-key">Forget key</button>' : ''}<button class="button button-quiet" id="full-sync" ${busy ? 'disabled' : ''}>Re-fetch full history ↻</button></div>${data.sync ? `<details><summary>Latest sync details</summary><p>Completed ${escapeHtml(new Date(data.sync.completedAt).toLocaleString('en-GB'))}. ${data.sync.fullySuccessful ? 'All requested datasets downloaded.' : 'See the sync warnings for unavailable data.'}</p></details>` : ''}</section>`
     + `<div class="split-bottom"><section class="card panel"><h2>Discuss your data in ChatGPT.</h2><p>Copy a briefing or download an export from your local file. Nothing is sent to ChatGPT automatically.</p><div class="export-range">${rangeControl()}</div><div class="export-actions"><button class="button button-secondary" data-copy ${!data.sync ? 'disabled' : ''}>Copy briefing ↗</button><a class="button button-secondary ${!data.sync ? 'is-disabled' : ''}" href="/api/export?days=${range}" ${!data.sync ? 'aria-disabled="true" tabindex="-1"' : ''}>Download JSON ↓</a></div></section><section class="card panel"><h2>Work with Codex locally.</h2><p>Ask Codex to read snapshot.json in the folder you selected. Your browser does not expose the full filesystem path, so point Codex to that folder when you start the conversation.</p><div class="export-actions"><button class="button button-secondary" id="copy-codex">Copy a Codex prompt ↗</button></div></section></div>`;
 }
 function render() {
@@ -336,7 +338,7 @@ try {
     const { FolderWorkspace } = await import('./folder-workspace.mjs');
     cloudWorkspace = new FolderWorkspace(); await cloudWorkspace.restore();
     $('.local-status strong').textContent = 'Files on your device';
-    $('.local-status div span').textContent = 'Private Cloudflare connection';
+    $('.local-status div span').textContent = 'Your folder · Your Garmin key';
     $('.sidebar-note p').textContent = 'Your training history lives in a folder you choose. Open the same folder in another browser to continue.';
     $('.footer span:first-child').textContent = 'Local files · Garmin via Cloudflare';
     $('#connect-dialog .privacy-note p').textContent = 'Your key stays in this browser session. Cloudflare temporarily processes the key and Garmin responses during syncing. Training history is saved only to your selected local folder.';
@@ -344,5 +346,5 @@ try {
   await reload();
   if (getKey() && (!cloudWorkspace || cloudWorkspace.connected)) await sync();
 } catch (error) {
-  $('#page').innerHTML = `<div class="warning error-banner"><strong>Could not load Cadence.</strong><p>${escapeHtml(error.message)}</p><p>Check your connection and sign-in, then refresh the page.</p></div>`;
+  $('#page').innerHTML = `<div class="warning error-banner"><strong>Could not load Cadence.</strong><p>${escapeHtml(error.message)}</p><p>Check your connection, then refresh the page.</p></div>`;
 }

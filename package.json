@@ -13,7 +13,7 @@
     "build": "npm run build:css && node scripts/build-cloud.mjs",
     "build:css": "tailwindcss -i styles/app.css -o public/styles.css --minify",
     "dev:css": "tailwindcss -i styles/app.css -o public/styles.css --watch",
-    "dev:cloudflare": "wrangler dev --ip 127.0.0.1 --port 8790 --var CADENCE_LOCAL_DEV:1",
+    "dev:cloudflare": "wrangler dev --ip 127.0.0.1 --port 8790",
     "check:cloudflare": "wrangler deploy --dry-run --outdir dist/worker",
     "deploy:cloudflare": "node scripts/deploy-cloud.mjs",
     "mcp": "node src/mcp.mjs",
@@ -21,7 +21,6 @@
   },
   "dependencies": {
     "@modelcontextprotocol/server": "2.4.0",
-    "jose": "6.2.17",
     "zod": "4.6.7"
   },
   "devDependencies": {

@@ -1,28 +1,6 @@
-import { createRemoteJWKSet, jwtVerify } from 'jose';
 import { GarminClient, GarminError } from '../public/shared/garmin.mjs';
 import { validDay, shiftDay } from '../public/shared/model.mjs';
 
-const keySets = new Map();
-export async function verifyAccess(request, env, keySetOverride) {
-  const url = new URL(request.url);
-  // This flag cannot bypass authentication on an Internet hostname.
-  if (env.CADENCE_LOCAL_DEV === '1' && ['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname)) return;
-  const team = env.ACCESS_TEAM_DOMAIN || '';
-  if (!/^[a-z0-9-]+\.cloudflareaccess\.com$/.test(team) || !env.ACCESS_AUD) {
-    const error = new Error('Configure Cloudflare Access and the ACCESS_TEAM_DOMAIN / ACCESS_AUD variables before using this deployment.');
-    error.status = 503; error.code = 'ACCESS_NOT_CONFIGURED'; throw error;
-  }
-  const token = request.headers.get('Cf-Access-Jwt-Assertion');
-  if (!token) { const error = new Error('Sign in through Cloudflare Access to use Cadence.'); error.status = 401; error.code = 'ACCESS_REQUIRED'; throw error; }
-  try {
-    const issuer = `https://${team}`;
-    if (!keySets.has(issuer)) keySets.set(issuer, createRemoteJWKSet(new URL(`${issuer}/cdn-cgi/access/certs`)));
-    await jwtVerify(token, keySetOverride || keySets.get(issuer), { issuer, audience: env.ACCESS_AUD, algorithms: ['RS256'] });
-  } catch {
-    const error = new Error('Your Cloudflare Access session is invalid or expired. Sign in again.');
-    error.status = 401; error.code = 'ACCESS_REQUIRED'; throw error;
-  }
-}
 function headers(extra = {}) {
   return { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer',
     'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
@@ -30,6 +8,28 @@ function headers(extra = {}) {
 }
 const json = (value, status = 200, extra) => new Response(JSON.stringify(value), { status,
   headers: headers({ 'Content-Type': 'application/json; charset=utf-8', ...extra }) });
+async function readQuery(request) {
+  // Bound streamed bodies too: this relay is public and accepts only small date/page queries.
+  const reader = request.body?.getReader();
+  const chunks = []; let size = 0;
+  if (reader) {
+    try {
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        size += value.byteLength;
+        if (size > 4096) { await reader.cancel(); throw new GarminError('Request too large.', 413); }
+        chunks.push(value);
+      }
+    } finally { reader.releaseLock(); }
+  }
+  const bytes = new Uint8Array(size); let offset = 0;
+  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+  let query;
+  try { query = JSON.parse(new TextDecoder().decode(bytes)); } catch { throw new GarminError('Invalid JSON.', 400); }
+  if (!query || typeof query !== 'object' || Array.isArray(query)) throw new GarminError('Invalid query.', 400);
+  return query;
+}
 function range(query) {
   const { startDate, endDate } = query;
   if (!validDay(startDate) || !validDay(endDate) || startDate > endDate || endDate > shiftDay(startDate, 30)) {
@@ -54,11 +54,10 @@ function upstreamRoute(name, query) {
   if (name === 'hrv') return [`/hrv-service/hrv/daily/${dates.startDate}/${dates.endDate}`, {}];
   throw new GarminError('Unknown Garmin operation.', 404);
 }
-export function createWorker({ fetchImpl = fetch, authenticate = verifyAccess } = {}) {
+export function createWorker({ fetchImpl = fetch } = {}) {
   return { async fetch(request, env) {
     const url = new URL(request.url);
     try {
-      await authenticate(request, env);
       if (request.headers.get('Origin') && request.headers.get('Origin') !== url.origin) return json({ error: 'Cross-origin requests are not allowed.' }, 403);
       const site = request.headers.get('Sec-Fetch-Site');
       if (site && !['same-origin', 'none'].includes(site)) return json({ error: 'Cross-origin requests are not allowed.' }, 403);
@@ -70,11 +69,7 @@ export function createWorker({ fetchImpl = fetch, authenticate = verifyAccess } 
         if (request.headers.get('X-Cadence-Request') !== '1' || !request.headers.get('Content-Type')?.startsWith('application/json')) {
           return json({ error: 'Invalid app request.' }, 403);
         }
-        const body = await request.text();
-        if (body.length > 4096) return json({ error: 'Request too large.' }, 413);
-        let query;
-        try { query = JSON.parse(body); } catch { return json({ error: 'Invalid JSON.' }, 400); }
-        if (!query || typeof query !== 'object' || Array.isArray(query)) return json({ error: 'Invalid query.' }, 400);
+        const query = await readQuery(request);
         const authorization = request.headers.get('Authorization') || '';
         const operation = url.pathname.slice('/api/garmin/'.length);
         if (authorization.length > 8192 || !authorization.startsWith(operation === 'token' ? 'ApiKey ' : 'Bearer ')
@@ -103,7 +98,6 @@ export function createWorker({ fetchImpl = fetch, authenticate = verifyAccess } 
       for (const [name, value] of Object.entries(headers())) response.headers.set(name, value);
       return response;
     } catch (error) {
-      if (error.code?.startsWith('ACCESS_')) return json({ error: error.message }, error.status, { 'X-Cadence-Error': error.code });
       if (error instanceof GarminError) return json({ error: error.message }, error.status >= 400 && error.status < 600 ? error.status : 502);
       return json({ error: 'The request could not be completed. No training data was saved on the server.' }, 500);
     }

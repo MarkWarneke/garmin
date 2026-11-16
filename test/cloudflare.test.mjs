@@ -1,7 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { generateKeyPair, exportJWK, createLocalJWKSet, SignJWT } from 'jose';
-import { createWorker, verifyAccess } from '../src/worker.mjs';
+import { createWorker } from '../src/worker.mjs';
 import { emptySnapshot } from '../src/data.mjs';
 import { mockGarmin } from './fixtures.mjs';
 import { FolderWorkspace, readFolder, writeFolder } from '../public/folder-workspace.mjs';
@@ -26,44 +25,50 @@ function memoryFolder(initial) {
     },
   };
 }
-test('cloud deployment denies access without configuration or a valid Access session', async () => {
+test('public deployment serves the app and bootstrap without a Cloudflare account or session', async () => {
   const worker = createWorker();
-  assert.equal((await worker.fetch(new Request(base), {})).status, 503);
-  assert.equal((await worker.fetch(new Request(base), { CADENCE_LOCAL_DEV: '1' })).status, 503);
-  const env = { ACCESS_TEAM_DOMAIN: 'example.cloudflareaccess.com', ACCESS_AUD: 'app-audience' };
-  assert.equal((await worker.fetch(new Request(base), env)).status, 401);
+  const env = { ASSETS: { fetch: async () => new Response('<html>Cadence</html>', { headers: { 'Content-Type': 'text/html' } }) } };
+  const page = await worker.fetch(new Request(base), env);
+  assert.equal(page.status, 200);
+  assert.equal(await page.text(), '<html>Cadence</html>');
+  assert.equal(page.headers.get('cache-control'), 'no-store');
+  const bootstrap = await worker.fetch(new Request(base + '/api/bootstrap'), env);
+  assert.equal(bootstrap.status, 200);
+  assert.deepEqual(await bootstrap.json(), { mode: 'cloud', storage: 'local-folder', timezone: 'Europe/Berlin' });
+  assert.equal((await worker.fetch(new Request(base + '/api/data'), env)).status, 404);
 });
-test('Access verifies the signature, issuer, audience, and expiration', async () => {
-  const { publicKey, privateKey } = await generateKeyPair('RS256');
-  const jwk = { ...await exportJWK(publicKey), kid: 'test-key' };
-  const keySet = createLocalJWKSet({ keys: [jwk] });
-  const env = { ACCESS_TEAM_DOMAIN: 'example.cloudflareaccess.com', ACCESS_AUD: 'app-audience' };
-  const token = await new SignJWT({ email: 'test@example.com' }).setProtectedHeader({ alg: 'RS256', kid: 'test-key' })
-    .setIssuer('https://example.cloudflareaccess.com').setAudience('app-audience').setExpirationTime('2m').sign(privateKey);
-  const req = new Request(base, { headers: { 'Cf-Access-Jwt-Assertion': token } });
-  await verifyAccess(req, env, keySet);
-  await assert.rejects(verifyAccess(req, { ...env, ACCESS_AUD: 'wrong-audience' }, keySet), /invalid or expired/);
-  const expired = await new SignJWT({}).setProtectedHeader({ alg: 'RS256', kid: 'test-key' }).setIssuer('https://example.cloudflareaccess.com')
-    .setAudience('app-audience').setExpirationTime(1).sign(privateKey);
-  await assert.rejects(verifyAccess(new Request(base, { headers: { 'Cf-Access-Jwt-Assertion': expired } }), env, keySet), /invalid or expired/);
-  await assert.rejects(verifyAccess(new Request(base, { headers: { 'Cf-Access-Jwt-Assertion': token.slice(0, -10) + 'invalid' } }), env, keySet));
+test('public relay keeps each visitor credential and response isolated', async () => {
+  const worker = createWorker({ fetchImpl: async (_url, options) => {
+    const credential = options.headers.Authorization;
+    // Interleave separate visitors' requests through the same Worker instance.
+    await new Promise(resolve => setTimeout(resolve, credential.endsWith('alice') ? 10 : 1));
+    return new Response(credential.endsWith('alice') ? 'alice-access-token' : 'bob-access-token');
+  } });
+  const responses = await Promise.all(['alice', 'bob'].map(name => worker.fetch(request('/api/garmin/token', {}, { Authorization: `ApiKey ${name}` }), {})));
+  assert.deepEqual(await Promise.all(responses.map(response => response.text())), ['alice-access-token', 'bob-access-token']);
+  assert.ok(responses.every(response => response.headers.get('cache-control') === 'no-store'));
+  const missing = await worker.fetch(request('/api/garmin/token', {}, { Authorization: '' }), {});
+  assert.equal(missing.status, 401);
 });
 test('Worker restricts origins, operations and dates, relays tokens as text, and never echoes upstream errors', async () => {
-  const mock = mockGarmin(); const worker = createWorker({ ...mock, authenticate: async () => {} });
+  const mock = mockGarmin(); const worker = createWorker(mock);
   assert.equal((await worker.fetch(request('/api/garmin/token', {}, { Origin: 'https://foreign.example' }), {})).status, 403);
+  assert.equal((await worker.fetch(request('/api/garmin/token', {}, { 'Sec-Fetch-Site': 'cross-site' }), {})).status, 403);
   assert.equal((await worker.fetch(request('/api/garmin/token', {}, { 'X-Cadence-Request': '' }), {})).status, 403);
+  assert.equal((await worker.fetch(request('/api/garmin/token', { padding: 'x'.repeat(4096) }), {})).status, 413);
   assert.equal((await worker.fetch(request('/api/garmin/daily', { startDate: '2026-01-01', endDate: '2026-11-16' }), {})).status, 400);
+  assert.equal((await worker.fetch(request('/api/garmin/arbitrary-url', { startDate: '2026-11-16', endDate: '2026-11-16', url: 'https://foreign.example' }), {})).status, 404);
   assert.equal(mock.calls.length, 0);
   const token = await worker.fetch(request('/api/garmin/token'), {});
   assert.equal(await token.text(), 'test-access-token'); assert.equal(token.headers.get('cache-control'), 'no-store');
   const daily = await worker.fetch(request('/api/garmin/daily', { startDate: '2026-11-16', endDate: '2026-11-16' }), {});
   assert.equal(daily.status, 200); assert.equal((await daily.json()).data.length, 1);
-  const failed = createWorker({ authenticate: async () => {}, fetchImpl: async () => new Response('private-upstream-error-with-token', { status: 401 }) });
+  const failed = createWorker({ fetchImpl: async () => new Response('private-upstream-error-with-token', { status: 401 }) });
   const error = await failed.fetch(request('/api/garmin/token'), {});
   assert.equal(error.status, 401); assert.doesNotMatch(await error.text(), /private-upstream-error-with-token|test-personal-key/);
 });
 test('hosted sync saves only normalized history to the selected folder, and a new browser session reads it without a key', async () => {
-  const mock = mockGarmin(), worker = createWorker({ ...mock, authenticate: async () => {} });
+  const mock = mockGarmin(), worker = createWorker(mock);
   const requests = [];
   const fetchImpl = async (path, options) => {
     requests.push({ path, body: options.body });

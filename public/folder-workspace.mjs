@@ -69,11 +69,7 @@ export function createProxyFetch(fetchImpl = fetch) {
         body: JSON.stringify(query) });
     } catch (error) {
       if (options.signal?.aborted) throw error;
-      const failure = new GarminError('Could not reach your Cloudflare app. Check your connection and sign in again if your session expired.', 503);
-      failure.fatal = true; throw failure;
-    }
-    if (response.headers.get('X-Cadence-Error')?.startsWith('ACCESS_')) {
-      const failure = new GarminError('Sign in to your Cloudflare Access application, then reload Cadence and try again.', 503);
+      const failure = new GarminError('Could not reach Cadence. Check your connection and try again.', 503);
       failure.fatal = true; throw failure;
     }
     return response;

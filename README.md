@@ -2,7 +2,7 @@
 
 A Garmin activity and health dashboard built with **HyperUI application components and Tailwind CSS**. Run it locally on your Mac or deploy the UI and API relay together to **Cloudflare Workers**. Training history stays in local JSON files in both modes. Neither requires an MCP server or an OpenAI API key.
 
-For GitHub Actions deployment, follow [CLOUDFLARE.md](CLOUDFLARE.md). The hosted version uses Chrome/Edge folder access and Cloudflare Access sign-in. Garmin credentials and data pass through the Worker during syncing, with no cloud database configured.
+For GitHub Actions deployment, follow [CLOUDFLARE.md](CLOUDFLARE.md). The hosted app is public and requires no Cloudflare sign-in. Each visitor uses Chrome/Edge to select their own local folder and enters their own Garmin Personal API key. Garmin credentials and data pass through the Worker during syncing, with no cloud database configured.
 
 The current version sets up data access and visualization. Training goals, the coaching agent, and personalized plan generation are deferred. The training calendar is an empty workspace, not a generated plan.
 
@@ -76,7 +76,7 @@ args = ["/Users/mark/Documents/ChatGPT/training/src/mcp.mjs"]
 
 The dashboard uses HTML and browser JavaScript, with HyperUI application patterns for navigation, stats, tables, forms, badges, and dialogs. Tailwind CSS 4.3 compiles `styles/app.css` to `public/styles.css` locally. There is no CDN or browser-side Tailwind runtime. The compiled CSS is checked in so the dashboard can start directly without a build. See `THIRD_PARTY_NOTICES.md` for HyperUI attribution and its MIT license.
 
-The local server uses Node built-ins. Shared Garmin and data-model modules also run in the browser for the hosted version. Its Worker validates Cloudflare Access JWTs with `jose` and relays a fixed allowlist of Garmin operations. The optional MCP adapter uses the official MCP SDK and Zod. `npm run dev` watches local backend files. Run `npm run dev:css` in a second terminal while editing the UI, then refresh the browser. `npm run build` compiles CSS and prepares a source-only allowlisted Cloudflare asset directory.
+The local server uses Node built-ins. Shared Garmin and data-model modules also run in the browser for the hosted version. Its public Worker relays a fixed allowlist of Garmin operations using only the credential supplied with each request. It restricts browser origins, query sizes, dates and pagination; it has no saved user sessions or history endpoint. The optional MCP adapter uses the official MCP SDK and Zod. `npm run dev` watches local backend files. Run `npm run dev:css` in a second terminal while editing the UI, then refresh the browser. `npm run build` compiles CSS and prepares a source-only allowlisted Cloudflare asset directory.
 
 ```sh
 npm ci
