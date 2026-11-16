@@ -58,13 +58,14 @@ export function createWorker({ fetchImpl = fetch } = {}) {
   return { async fetch(request, env) {
     const url = new URL(request.url);
     try {
-      if (request.headers.get('Origin') && request.headers.get('Origin') !== url.origin) return json({ error: 'Cross-origin requests are not allowed.' }, 403);
-      const site = request.headers.get('Sec-Fetch-Site');
-      if (site && !['same-origin', 'none'].includes(site)) return json({ error: 'Cross-origin requests are not allowed.' }, 403);
       if (request.method === 'GET' && url.pathname === '/api/bootstrap') {
         return json({ mode: 'cloud', storage: 'local-folder', timezone: 'Europe/Berlin' });
       }
       if (url.pathname.startsWith('/api/garmin/')) {
+        // Public pages may be opened from any site. Credential-bearing relay calls must come from this app.
+        if (request.headers.get('Origin') && request.headers.get('Origin') !== url.origin) return json({ error: 'Cross-origin requests are not allowed.' }, 403);
+        const site = request.headers.get('Sec-Fetch-Site');
+        if (site && !['same-origin', 'none'].includes(site)) return json({ error: 'Cross-origin requests are not allowed.' }, 403);
         if (request.method !== 'POST') return json({ error: 'Use POST for Garmin operations.' }, 405);
         if (request.headers.get('X-Cadence-Request') !== '1' || !request.headers.get('Content-Type')?.startsWith('application/json')) {
           return json({ error: 'Invalid app request.' }, 403);

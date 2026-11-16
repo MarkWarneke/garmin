@@ -28,7 +28,10 @@ function memoryFolder(initial) {
 test('public deployment serves the app and bootstrap without a Cloudflare account or session', async () => {
   const worker = createWorker();
   const env = { ASSETS: { fetch: async () => new Response('<html>Cadence</html>', { headers: { 'Content-Type': 'text/html' } }) } };
-  const page = await worker.fetch(new Request(base), env);
+  const page = await worker.fetch(new Request(base, { headers: {
+    'Sec-Fetch-Site': 'cross-site', 'Sec-Fetch-Mode': 'navigate', 'Sec-Fetch-Dest': 'document',
+    Referer: 'https://chatgpt.com/',
+  } }), env);
   assert.equal(page.status, 200);
   assert.equal(await page.text(), '<html>Cadence</html>');
   assert.equal(page.headers.get('cache-control'), 'no-store');
