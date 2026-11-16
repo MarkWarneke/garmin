@@ -36,6 +36,10 @@ jobs:
     name: Deploy Worker and UI
     needs: test
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    # Shows each deployment and its live URL under the repository's Deployments.
+    environment:
+      name: production
+      url: ${{ steps.deploy.outputs.url }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -49,6 +53,7 @@ jobs:
       - run: npm ci
       - run: npm run build
       - name: Deploy to Cloudflare
+        id: deploy
         run: npm run deploy:cloudflare
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

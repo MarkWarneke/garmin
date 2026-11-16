@@ -24,7 +24,7 @@ In your repository, open **Settings → Secrets and variables → Actions** and 
 
 Then run **Actions → Test and deploy to Cloudflare → Run workflow**, or push to `main`. The app is published at `https://<name>.<your-subdomain>.workers.dev`, where `<name>` is the `name` in `wrangler.json`.
 
-Secrets are only available to the deploy step, so pull requests cannot deploy. The workflow uses Node 24 and pinned action versions.
+Each deployment appears under **Deployments** (the `production` environment) on the repository page, linked to the live URL. Secrets are only available to the deploy step, so pull requests cannot deploy. The workflow uses Node 24 and pinned action versions.
 
 Do not put Cloudflare Access in front of the hostname. The app is meant to be public, and Access cannot be bypassed by application code.
 
