@@ -15,6 +15,9 @@ test('local API protects origins, validates requests, persists normalized histor
   const base = `http://127.0.0.1:${app.address().port}`;
   const get = (path, options) => fetch(base + path, options);
   assert.equal((await get('/')).status, 200);
+  const handoffModule = await get('/shared/handoff.mjs');
+  assert.equal(handoffModule.status, 200);
+  assert.match(handoffModule.headers.get('content-type'), /javascript/);
   const bootResponse = await get('/api/bootstrap');
   assert.equal(bootResponse.headers.get('cache-control'), 'no-store');
   const boot = await bootResponse.json();

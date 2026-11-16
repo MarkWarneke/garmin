@@ -85,7 +85,8 @@ export function createApp({ directory, fetchImpl, syncImpl = syncGarmin } = {}) 
         return;
       }
       if (req.method === 'GET') {
-        const files = { '/': 'index.html', '/app.js': 'app.js', '/styles.css': 'styles.css', '/favicon.svg': 'favicon.svg' };
+        const files = { '/': 'index.html', '/app.js': 'app.js', '/styles.css': 'styles.css', '/favicon.svg': 'favicon.svg',
+          '/shared/handoff.mjs': 'shared/handoff.mjs' };
         const file = files[url.pathname];
         if (file) {
           const mime = file.endsWith('.html') ? 'text/html' : file.endsWith('.css') ? 'text/css' : file.endsWith('.svg') ? 'image/svg+xml' : 'text/javascript';
