@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { loadSnapshot, saveSnapshot, selectData, briefing, projectDir, dataDir } from './data.mjs';
+import { loadSnapshot, saveSnapshot, loadProfile, saveProfile, selectData, briefing, projectDir, dataDir } from './data.mjs';
 import { syncGarmin, GarminError } from './garmin.mjs';
 
 const PUBLIC = fileURLToPath(new URL('../public/', import.meta.url));
@@ -41,6 +41,7 @@ export function createApp({ directory, fetchImpl, syncImpl = syncGarmin } = {}) 
     try {
       if (req.method === 'GET' && url.pathname === '/api/bootstrap') {
         return json(res, 200, { mode: 'local', csrf, syncing, projectDir, dataFile: join(directory || dataDir, 'snapshot.json'),
+          profileFile: join(directory || dataDir, 'profile.json'),
           nodePath: process.execPath });
       }
       if (req.method === 'GET' && ['/api/data', '/api/export', '/api/briefing'].includes(url.pathname)) {
@@ -48,6 +49,17 @@ export function createApp({ directory, fetchImpl, syncImpl = syncGarmin } = {}) 
         if (url.pathname === '/api/briefing') return json(res, 200, { text: briefing(data) });
         if (url.pathname === '/api/export') res.setHeader('Content-Disposition', 'attachment; filename="cadence-training-data.json"');
         return json(res, 200, data);
+      }
+      if (req.method === 'GET' && url.pathname === '/api/profile') return json(res, 200, await loadProfile(directory));
+      if (req.method === 'POST' && url.pathname === '/api/profile') {
+        let body = '';
+        for await (const chunk of req) {
+          body += chunk;
+          if (Buffer.byteLength(body) > 64 * 1024) return json(res, 413, { error: 'Profile too large.' });
+        }
+        let input;
+        try { input = JSON.parse(body); } catch { return json(res, 400, { error: 'Invalid JSON.' }); }
+        return json(res, 200, await saveProfile(input, directory));
       }
       if (req.method === 'POST' && url.pathname === '/api/sync') {
         if (syncing) return json(res, 409, { error: 'A sync is already running. Wait for it to finish.' });
@@ -86,7 +98,7 @@ export function createApp({ directory, fetchImpl, syncImpl = syncGarmin } = {}) 
       }
       if (req.method === 'GET') {
         const files = { '/': 'index.html', '/app.js': 'app.js', '/styles.css': 'styles.css', '/favicon.svg': 'favicon.svg',
-          '/shared/handoff.mjs': 'shared/handoff.mjs' };
+          '/shared/handoff.mjs': 'shared/handoff.mjs', '/shared/profile.mjs': 'shared/profile.mjs', '/shared/model.mjs': 'shared/model.mjs' };
         const file = files[url.pathname];
         if (file) {
           const mime = file.endsWith('.html') ? 'text/html' : file.endsWith('.css') ? 'text/css' : file.endsWith('.svg') ? 'image/svg+xml' : 'text/javascript';

@@ -50,6 +50,17 @@ test('local API protects origins, validates requests, persists normalized histor
   assert.doesNotMatch(await exported.text(), /test-personal-key|test-access-token/);
   const briefing = await (await get('/api/briefing')).json();
   assert.match(briefing.text, /Ask about my goals/);
+  const blank = await (await get('/api/profile')).json();
+  assert.equal(blank.ftpWatts, null); assert.equal(blank.prompt, null);
+  assert.equal((await get('/api/profile', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).status, 403);
+  const savedProfile = await (await get('/api/profile', { method: 'POST', headers,
+    body: JSON.stringify({ goal: ' Gran fondo ', ftpWatts: '250', daysPerWeek: 12, prompt: 'My own prompt', secret: 'dropped' }) })).json();
+  assert.equal(savedProfile.goal, 'Gran fondo'); assert.equal(savedProfile.ftpWatts, 250); assert.equal(savedProfile.daysPerWeek, null);
+  const profileFile = JSON.parse(await readFile(join(directory, 'profile.json'), 'utf8'));
+  assert.equal(profileFile.prompt, 'My own prompt'); assert.equal(profileFile.secret, undefined);
+  assert.equal((await stat(join(directory, 'profile.json'))).mode & 0o777, 0o600);
+  assert.equal(boot.profileFile, join(directory, 'profile.json'));
+  assert.equal((await get('/shared/profile.mjs')).status, 200);
   assert.equal((await get('/src/server.mjs')).status, 404);
   assert.equal((await get('/data/snapshot.json')).status, 404);
 });

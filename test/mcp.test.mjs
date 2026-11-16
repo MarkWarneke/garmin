@@ -16,7 +16,7 @@ test('optional MCP adapter exposes read-only saved data over a real stdio connec
   t.after(async () => { await client.close(); await rm(directory, { recursive: true, force: true }); });
   await client.connect(transport);
   const { tools } = await client.listTools();
-  assert.equal(tools.length, 4);
+  assert.equal(tools.length, 5);
   assert.ok(tools.every(tool => tool.annotations.readOnlyHint === true && tool.annotations.openWorldHint === false));
   const status = await client.callTool({ name: 'garmin_sync_status', arguments: {} });
   assert.equal(JSON.parse(status.content[0].text).sync, null);

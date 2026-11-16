@@ -46,7 +46,7 @@ Each person should use a folder for their own Garmin history. The public site do
 
 The hosted app does not need a local Node server. Codex and the optional local MCP adapter can still read the same saved JSON file. Coaching and plan generation remain deferred.
 
-The **Include local snapshot link** checkbox beside the briefing copy button adds a local file link for ChatGPT or Claude on this computer with local filesystem tools enabled. Enter the complete path to your selected folder's `snapshot.json`; Chrome/Edge expose only its folder name to the app. The info icon explains the access requirement. The copied prompt asks the assistant to read all saved records and to request an attachment if it cannot open the file. No snapshot is uploaded by this option. For ordinary web chats, attach the JSON file instead.
+**Create plan prompt** opens a dialog that asks for your goal, FTP, heart rate, availability, sports, equipment, and restrictions, and shows the generated prompt, which you can edit. Answers are saved to `profile.json` in your selected folder, next to `snapshot.json`. The **Include local snapshot link** checkbox (for the ChatGPT or Claude desktop app on the computer where the folder lives) names that folder in the prompt, because Chrome/Edge expose only the folder name. Optionally add the full path for a direct `file:///` link.
 
 ## Local checks for the hosted version
 

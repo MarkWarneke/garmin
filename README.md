@@ -50,8 +50,8 @@ Each sync obtains the current local request token, so restarting the server does
 
 **No MCP required:**
 
-- In **Data & connection**, copy the ChatGPT briefing or download the JSON and attach it to a conversation. The selected date range applies to the export. Nothing is automatically sent to OpenAI.
-- Enable **Include local snapshot link** to add a `file:///` link and the full filesystem path to the copied prompt. This is for ChatGPT or Claude on the same computer with local file access configured and permission to read the file. It directs the assistant to read the complete saved snapshot, including history outside the selected export range. If file tools are unavailable, attach `snapshot.json` instead.
+- In **Data & connection** or **Training plan**, choose **Create plan prompt**. A short form asks for your goal, FTP, heart rate, weight, availability, sports, equipment, and restrictions; each field says why it is needed. The prompt is shown and editable before you copy it with your Garmin data for the selected range. Answers and any prompt edits are saved to `profile.json` next to `snapshot.json`. Nothing is automatically sent to an assistant.
+- Enable **Include local snapshot link** to add a `file:///` link to the complete saved snapshot and profile. This only works with the ChatGPT or Claude desktop app on the same computer, with local file access allowed. Synced activities include power, normalized power, best 1/5/20/60-minute power, and heart rate and power time in zones; ramp tests yield an FTP estimate (75% of best one-minute power).
 - The local server fills in the snapshot path. In the hosted app, enter the full path to `snapshot.json` in your selected folder; browsers do not reveal the full directory path. The checkbox and path are remembered in this tab's session. Choosing or disconnecting a folder clears the entered path. This feature adds a local link without uploading the file.
 - In Codex, ask it to read `/Users/mark/Documents/ChatGPT/training/data/snapshot.json`. The dashboard also provides a copyable prompt.
 

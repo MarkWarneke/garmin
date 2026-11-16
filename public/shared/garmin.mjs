@@ -2,6 +2,8 @@ import { dateChunks, isoDay, shiftDay, normalizeActivity, normalizeDaily, normal
   mergeRecords } from './model.mjs';
 
 const API = 'https://personal.connectapi.garmin.com';
+// Bump when normalizeActivity keeps new fields, so the next sync re-downloads older activities once.
+export const ACTIVITY_FIELDS = 2;
 const TOKEN_PATH = '/personalapitoken-service/personal-api/personal-api-key/token';
 export class GarminError extends Error {
   constructor(message, status = 502) { super(message); this.status = status; }
@@ -15,7 +17,8 @@ const pause = (ms, signal) => new Promise((resolve, reject) => {
 });
 export class GarminClient {
   constructor(key, { fetchImpl = fetch, signal, onProgress = () => {} } = {}) {
-    this.key = key; this.fetch = fetchImpl; this.signal = signal; this.onProgress = onProgress;
+    // Workers reject fetch called as a method of another object ("Illegal invocation"), so never bind it to this client.
+    this.key = key; this.fetch = (...args) => fetchImpl(...args); this.signal = signal; this.onProgress = onProgress;
     this.accessToken = null;
   }
   async request(path, options = {}, attempt = 0) {
@@ -23,13 +26,17 @@ export class GarminClient {
     const { responseFormat = 'json', ...fetchOptions } = options;
     let response;
     try {
-      response = await this.fetch(API + path, { ...fetchOptions, redirect: 'error',
+      // Workers support only follow/manual redirects; never follow one with a credential attached.
+      response = await this.fetch(API + path, { ...fetchOptions, redirect: 'manual',
         signal: this.signal ? AbortSignal.any([this.signal, AbortSignal.timeout(30000)]) : AbortSignal.timeout(30000),
         headers: { Accept: 'application/json', ...options.headers } });
     } catch (e) {
       if (this.signal?.aborted) throw this.signal.reason;
       if (e instanceof GarminError) throw e;
       throw new GarminError('Could not reach Garmin. Check your connection and try again.');
+    }
+    if (response.type === 'opaqueredirect' || (response.status >= 300 && response.status < 400)) {
+      throw new GarminError('Garmin redirected the request unexpectedly. Try again later.');
     }
     if (response.status === 429 && attempt < 2) {
       const after = response.headers.get('retry-after');
@@ -89,11 +96,11 @@ export async function syncGarmin(snapshot, key, { days = 90, full = false, now =
   // Re-fetch the latest week, which can include late uploads and edited/reprocessed sleep.
   const previous = snapshot.sync;
   const canIncrement = !full && previous?.fullySuccessful && previous.requestedFrom <= requestedFrom
-    && previous.requestedTo >= shiftDay(now, -7);
+    && previous.requestedTo >= shiftDay(now, -7) && previous.activityFields >= ACTIVITY_FIELDS;
   const from = canIncrement ? [requestedFrom, shiftDay(previous.requestedTo, -6)].sort().at(-1) : requestedFrom;
   const result = structuredClone(snapshot);
   const attempt = { attemptedAt: new Date().toISOString(), requestedFrom, requestedTo: now,
-    fetchedFrom: from, fetchedTo: now, fullySuccessful: false, warnings: [], coverage: [] };
+    fetchedFrom: from, fetchedTo: now, activityFields: ACTIVITY_FIELDS, fullySuccessful: false, warnings: [], coverage: [] };
   const client = new GarminClient(key, { fetchImpl, signal, onProgress });
   try {
     onProgress({ message: 'Connecting to Garmin…' });

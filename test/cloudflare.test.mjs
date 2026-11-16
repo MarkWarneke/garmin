@@ -11,16 +11,17 @@ function request(path, data = {}, extra = {}) {
     'X-Cadence-Request': '1', Authorization: path.endsWith('/token') ? 'ApiKey test-personal-key' : 'Bearer test-access-token', ...extra }, body: JSON.stringify(data) });
 }
 function memoryFolder(initial) {
-  let contents = initial;
-  return { name: 'test-training', queryPermission: async () => 'granted', get contents() { return contents; },
-    replace(value) { contents = value; },
+  const files = { 'snapshot.json': initial };
+  return { name: 'test-training', queryPermission: async () => 'granted', files, get contents() { return files['snapshot.json']; },
+    replace(value) { files['snapshot.json'] = value; },
     async getFileHandle(name, { create } = {}) {
-      assert.equal(name, 'snapshot.json');
-      if (contents === undefined && !create) throw new DOMException('Missing', 'NotFoundError');
-      if (contents === undefined) contents = '';
-      return { getFile: async () => new File([contents], name), async createWritable(options) {
-        assert.equal(options.mode, 'exclusive'); let pending;
-        return { async write(value) { pending = value; }, async close() { contents = pending; }, async abort() {} };
+      assert.ok(name in files || name === 'profile.json');
+      if (files[name] === undefined && !create) throw new DOMException('Missing', 'NotFoundError');
+      if (files[name] === undefined) files[name] = '';
+      return { getFile: async () => new File([files[name]], name), async createWritable(options) {
+        if (name === 'snapshot.json') assert.equal(options.mode, 'exclusive');
+        let pending;
+        return { async write(value) { pending = value; }, async close() { files[name] = pending; }, async abort() {} };
       } };
     },
   };
@@ -97,6 +98,17 @@ test('local folder writes detect external edits and preserve the newer file', as
   directory.replace(JSON.stringify(newer));
   await assert.rejects(writeFolder(directory, snapshot, revision), /changed while syncing/);
   assert.deepEqual(JSON.parse(directory.contents), newer);
+});
+test('the athlete profile is saved in its own file in the selected folder, separate from synced history', async () => {
+  const directory = memoryFolder(JSON.stringify(emptySnapshot()));
+  const workspace = new FolderWorkspace(); workspace.directory = directory; workspace.connected = true;
+  assert.equal((await workspace.profile()).goal, null);
+  await workspace.saveProfile({ goal: 'Gran fondo', ftpWatts: 250, prompt: null });
+  assert.equal(JSON.parse(directory.files['profile.json']).ftpWatts, 250);
+  assert.equal(JSON.parse(directory.contents).activities.length, 0);
+  assert.equal((await workspace.profile()).goal, 'Gran fondo');
+  const disconnected = new FolderWorkspace();
+  await assert.rejects(disconnected.saveProfile({ goal: 'x' }), /Choose your local data folder/);
 });
 test('malformed folder data is not silently overwritten', async () => {
   const directory = memoryFolder('{invalid');

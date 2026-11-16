@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { emptySnapshot, normalizeActivity, normalizeDaily, normalizeSleep, normalizeHrv, selectData, dateChunks } from '../src/data.mjs';
+import { emptySnapshot, normalizeActivity, normalizeDaily, normalizeSleep, normalizeHrv, selectData, dateChunks, ftpTests } from '../src/data.mjs';
 import { syncGarmin, GarminClient } from '../src/garmin.mjs';
 import { activity, daily, sleep, hrv, response, mockGarmin } from './fixtures.mjs';
 
@@ -8,7 +8,7 @@ test('normalizes documented DTOs, preserves missing values, and excludes profile
   const a = normalizeActivity(activity());
   assert.equal(a.durationSeconds, 3600); assert.equal(a.distanceMeters, 25000);
   assert.equal(a.utcStart, '2026-11-16T17:00:00Z');
-  assert.equal(a.averagePower, undefined); assert.equal(a.startLatitude, undefined); assert.equal(a.userProfileId, undefined);
+  assert.equal(a.averagePower, null); assert.equal(a.powerTimeInZoneSeconds, null); assert.equal(a.startLatitude, undefined); assert.equal(a.userProfileId, undefined);
   assert.equal(normalizeDaily(daily()).steps, 7000);
   assert.equal(normalizeSleep(sleep()).sleepSeconds, 27000);
   assert.equal(normalizeSleep(sleep()).sleepScore, 85);
@@ -18,6 +18,24 @@ test('normalizes documented DTOs, preserves missing values, and excludes profile
   assert.equal(normalizeDaily({ calendarDate: '2026-02-30' }), null);
   const zero = normalizeDaily({ calendarDate: '2026-11-16', movement: { steps: { value: 0 } } });
   assert.equal(zero.steps, 0);
+});
+test('keeps power, zone, and power-curve fields and estimates FTP from ramp tests across all saved history', () => {
+  const ramp = normalizeActivity({ ...activity(7, '2026-10-12'), activityName: 'Zwift - FTP Ramp Test', avgPower: 180, maxPower: 410,
+    normPower: 205, max20MinPower: 230, intensityFactor: 0.82, maxAvgPower_60: 334, maxAvgPower_1200: 228,
+    averageBikingCadenceInRevPerMinute: 88, hrTimeInZone_1: 60, hrTimeInZone_3: 600,
+    powerTimeInZone_1: 120, powerTimeInZone_2: 300, powerTimeInZone_7: 45 });
+  assert.equal(ramp.normalizedPower, 205); assert.equal(ramp.max20MinPower, 230); assert.equal(ramp.averageCadence, 88);
+  assert.deepEqual(ramp.bestPowerWatts, { 60: 334, 1200: 228 });
+  assert.deepEqual(ramp.hrTimeInZoneSeconds, [60, null, 600, null, null]);
+  assert.deepEqual(ramp.powerTimeInZoneSeconds, [120, 300, null, null, null, null, 45]);
+  assert.deepEqual(ftpTests([ramp]), [{ id: '7', date: '2026-10-12', name: 'Zwift - FTP Ramp Test', bestOneMinutePower: 334, estimatedFtp: 251 }]);
+  const snapshot = emptySnapshot();
+  snapshot.activities = [ramp, normalizeActivity({ ...activity(8), powerTimeInZone_2: 600, hrTimeInZone_3: 60 })];
+  const recent = selectData(snapshot, 7, '2026-11-16');
+  assert.equal(recent.activities.length, 1);
+  assert.equal(recent.summary.ftpTests[0].estimatedFtp, 251, 'FTP tests outside the range still reach the assistant');
+  assert.deepEqual(recent.summary.powerTimeInZoneSeconds, [0, 600, 0, 0, 0, 0, 0]);
+  assert.equal(recent.summary.measuredDays.powerActivities, 0);
 });
 test('date windows include both endpoints and handle a year boundary', () => {
   assert.deepEqual(dateChunks('2025-12-29', '2026-01-03', 3), [['2025-12-29', '2025-12-31'], ['2026-01-01', '2026-01-03']]);
@@ -46,6 +64,26 @@ test('repeat sync updates records without duplicates and incrementally re-fetche
   assert.equal(snapshot.sync.fetchedFrom, '2026-11-10');
   const full = await syncGarmin(snapshot, 'test-key', { ...mock, days: 30, full: true, now: '2026-11-17' });
   assert.equal(full.sync.fetchedFrom, '2026-10-19');
+  // History saved before power and zone fields were kept is re-downloaded once, without a manual full sync.
+  const legacy = structuredClone(snapshot); delete legacy.sync.activityFields;
+  const upgraded = await syncGarmin(legacy, 'test-key', { ...mock, days: 30, now: '2026-11-17' });
+  assert.equal(upgraded.sync.fetchedFrom, '2026-10-19');
+});
+test('the Garmin client never calls fetch as a method, which Cloudflare Workers reject', async () => {
+  const strictFetch = function (url) {
+    if (this !== undefined) throw new TypeError('Illegal invocation');
+    return Promise.resolve(new Response(url.endsWith('/token') ? 'token' : '[]'));
+  };
+  const client = new GarminClient('test-key', { fetchImpl: strictFetch });
+  await client.authenticate();
+  assert.equal(client.accessToken, 'token');
+});
+test('redirects are never followed with a credential, using a mode Workers support', async () => {
+  const mock = mockGarmin(() => new Response(null, { status: 302, headers: { Location: 'https://foreign.example/' } }));
+  const client = new GarminClient('test-key', mock);
+  await assert.rejects(client.authenticate(), /redirected/);
+  assert.equal(mock.calls[0].options.redirect, 'manual');
+  assert.equal(mock.calls.length, 1);
 });
 test('partial failures retain prior measurements and expose source-specific warnings', async () => {
   const mock = mockGarmin(url => url.pathname.includes('dailySleepSummariesByDate') ? response({ error: 'secret-token-from-upstream' }, 503) : null);

@@ -1,5 +1,6 @@
 import { emptySnapshot, selectData, briefing } from './shared/model.mjs';
 import { syncGarmin, GarminError } from './shared/garmin.mjs';
+import { emptyProfile, normalizeProfile } from './shared/profile.mjs';
 
 const FILE = 'snapshot.json';
 async function fingerprint(file) {
@@ -28,6 +29,22 @@ export async function writeFolder(directory, snapshot, expectedRevision) {
   const writable = await handle.createWritable({ mode: 'exclusive' });
   try { await writable.write(JSON.stringify(snapshot, null, 2) + '\n'); await writable.close(); }
   catch (error) { await writable.abort().catch(() => {}); throw error; }
+}
+// The athlete profile is a separate file, so syncing and profile edits never overwrite each other.
+const PROFILE = 'profile.json';
+export async function readProfile(directory) {
+  let file;
+  try { file = await (await directory.getFileHandle(PROFILE)).getFile(); }
+  catch (error) { if (error.name === 'NotFoundError') return emptyProfile(); throw error; }
+  try { return normalizeProfile(JSON.parse(await file.text())); }
+  catch { throw new Error('profile.json in your folder is not valid JSON. Fix or move it aside.'); }
+}
+export async function writeProfile(directory, profile) {
+  const saved = normalizeProfile({ ...profile, updatedAt: new Date().toISOString() });
+  const writable = await (await directory.getFileHandle(PROFILE, { create: true })).createWritable();
+  try { await writable.write(JSON.stringify(saved, null, 2) + '\n'); await writable.close(); }
+  catch (error) { await writable.abort().catch(() => {}); throw error; }
+  return saved;
 }
 async function rememberedHandle(value) {
   // IndexedDB holds only a directory permission handle, never Garmin keys or training records.
@@ -102,6 +119,12 @@ export class FolderWorkspace {
   async snapshot() { return this.connected ? (await readFolder(this.directory)).snapshot : emptySnapshot(); }
   async data(days) { return selectData(await this.snapshot(), days); }
   async briefing(days) { return { text: briefing(await this.data(days)) }; }
+  async profile() { return this.connected ? readProfile(this.directory) : emptyProfile(); }
+  async saveProfile(profile) {
+    if (!this.connected) throw new Error('Choose your local data folder to save your profile.');
+    if (await this.directory.queryPermission({ mode: 'readwrite' }) !== 'granted') throw new Error('Reconnect your data folder to allow saving.');
+    return writeProfile(this.directory, profile);
+  }
   async sync(key, options) {
     if (!this.connected) throw new Error('Choose your local data folder before syncing Garmin.');
     if (await this.directory.queryPermission({ mode: 'readwrite' }) !== 'granted') throw new Error('Reconnect your data folder to allow saving.');
