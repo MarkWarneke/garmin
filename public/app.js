@@ -417,7 +417,7 @@ $('#connect-form').addEventListener('submit', async event => {
   const key = $('#api-key').value.trim(); const days = Number($('#sync-days').value);
   if (key.length < 8 || /[\r\n]/.test(key)) { $('#connect-error').textContent = 'Enter a valid Garmin Personal API key.'; $('#connect-error').hidden = false; return; }
   if (!session.set('cadence.garminKey', key)) { memoryKey = key; notify('Browser session storage is unavailable. The key will last until this page reloads.'); }
-  session.set('cadence.syncDays', days); $('#api-key').value = ''; $('#connect-dialog').close(); await sync({ key, days, full: true });
+  session.set('cadence.syncDays', days); $('#api-key').value = ''; $('#connect-dialog').close(); await sync({ key, days });
 });
 $('#connect-dialog').addEventListener('close', () => { $('#api-key').value = ''; });
 $('#plan-form').addEventListener('submit', async event => {

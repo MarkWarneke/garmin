@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { emptySnapshot, normalizeActivity, normalizeDaily, normalizeSleep, normalizeHrv, selectData, dateChunks, ftpTests } from '../src/data.mjs';
-import { syncGarmin, GarminClient } from '../src/garmin.mjs';
+import { syncGarmin, syncPlan, GarminClient, ACTIVITY_FIELDS } from '../src/garmin.mjs';
 import { activity, daily, sleep, hrv, response, mockGarmin } from './fixtures.mjs';
 
 test('normalizes documented DTOs, preserves missing values, and excludes profile/route fields', () => {
@@ -68,6 +68,36 @@ test('repeat sync updates records without duplicates and incrementally re-fetche
   const legacy = structuredClone(snapshot); delete legacy.sync.activityFields;
   const upgraded = await syncGarmin(legacy, 'test-key', { ...mock, days: 30, now: '2026-11-17' });
   assert.equal(upgraded.sync.fetchedFrom, '2026-10-19');
+});
+test('sync plans download only days missing from saved history', () => {
+  const previous = { requestedFrom: '2026-08-19', requestedTo: '2026-11-16', coveredFrom: '2026-08-19',
+    completedAt: '2026-11-16T20:00:00Z', activityFields: ACTIVITY_FIELDS, warnings: [] };
+  const options = { requestedFrom: '2026-09-02', now: '2026-11-30' };
+  // Two weeks later: from one week before the last sync, not the whole 90 days.
+  assert.deepEqual(syncPlan(previous, options).windows.daily, [['2026-11-10', '2026-11-30']]);
+  assert.equal(syncPlan(previous, options).coveredFrom, '2026-08-19');
+  // A longer range downloads only the older days that were never saved, plus the recent days.
+  assert.deepEqual(syncPlan(previous, { requestedFrom: '2026-05-21', now: '2026-11-16' }).windows.sleep,
+    [['2026-05-21', '2026-08-18'], ['2026-11-10', '2026-11-16']]);
+  // A failed window is retried for its own source only.
+  const partial = { ...previous, warnings: [{ source: 'sleep', startDate: '2026-09-01', endDate: '2026-09-14' }] };
+  const retry = syncPlan(partial, options).windows;
+  assert.deepEqual(retry.sleep, [['2026-09-02', '2026-09-14'], ['2026-11-10', '2026-11-30']]);
+  assert.deepEqual(retry.hrv, [['2026-11-10', '2026-11-30']]);
+  // After a break longer than the range, everything in the range is new.
+  const late = syncPlan(previous, { requestedFrom: '2027-01-01', now: '2027-03-31' });
+  assert.deepEqual(late.windows.daily, [['2027-01-01', '2027-03-31']]); assert.equal(late.coveredFrom, '2027-01-01');
+  assert.deepEqual(syncPlan(previous, { ...options, full: true }).windows.hrv, [['2026-09-02', '2026-11-30']]);
+  assert.deepEqual(syncPlan(null, options).windows.activities, [['2026-09-02', '2026-11-30']]);
+});
+test('a sync after a long break requests fewer health windows than a full sync', async () => {
+  const mock = mockGarmin();
+  const first = await syncGarmin(emptySnapshot(), 'test-key', { ...mock, days: 90, now: '2026-11-16' });
+  const healthCalls = () => mock.calls.filter(c => !/token|activities/.test(c.url.pathname)).length;
+  const before = healthCalls();
+  const later = await syncGarmin(first, 'test-key', { ...mock, days: 90, now: '2026-11-30' });
+  assert.equal(healthCalls() - before, 6, 'two 14-day windows per health source instead of seven');
+  assert.equal(later.sync.fetchedFrom, '2026-11-10'); assert.equal(later.sync.coveredFrom, '2026-08-19');
 });
 test('the Garmin client never calls fetch as a method, which Cloudflare Workers reject', async () => {
   const strictFetch = function (url) {

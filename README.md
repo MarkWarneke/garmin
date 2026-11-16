@@ -17,7 +17,7 @@ npm start
 
 Open **http://127.0.0.1:8787** and click **Connect Garmin**. Enter your Personal API key in that local form. Do not put it in chat, source files, shell arguments, or an `.env` file.
 
-The first sync fetches the selected history range (90 days by default). Refreshing the page syncs again while the session key is available. Later syncs re-fetch the latest week to capture late uploads and recent corrections. **Data & connection → Re-fetch full history** refreshes the whole selected range.
+The first sync fetches the selected history range (90 days by default). Refreshing the page syncs again while the session key is available. Later syncs reuse saved history and download only what is missing: the days since the last sync plus its final week (late uploads and recalculated sleep), older days when you choose a longer range, and windows that failed last time. Entering a new key does not re-download saved history. **Data & connection → Re-fetch full history** refreshes the whole selected range.
 
 Keep the terminal open. Control-C stops the server. Set `PORT` if 8787 is occupied. Use the same hostname and port each time; browser session storage is scoped to the origin and tab.
 

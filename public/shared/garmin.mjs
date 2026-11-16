@@ -1,4 +1,4 @@
-import { dateChunks, isoDay, shiftDay, normalizeActivity, normalizeDaily, normalizeSleep, normalizeHrv,
+import { dateChunks, isoDay, shiftDay, validDay, normalizeActivity, normalizeDaily, normalizeSleep, normalizeHrv,
   mergeRecords } from './model.mjs';
 
 const API = 'https://personal.connectapi.garmin.com';
@@ -90,24 +90,56 @@ function arrayResponse(value, property, label) {
   if (!Array.isArray(rows)) throw new GarminError(`Unexpected ${label} response. Existing data has been retained.`);
   return rows;
 }
+function unionRanges(ranges) {
+  const merged = [];
+  for (const [start, end] of ranges.filter(([s, e]) => s <= e).sort((a, b) => a[0].localeCompare(b[0]))) {
+    const last = merged.at(-1);
+    if (last && start <= shiftDay(last[1], 1)) { if (end > last[1]) last[1] = end; }
+    else merged.push([start, end]);
+  }
+  return merged;
+}
+const SOURCES = ['activities', 'daily', 'sleep', 'hrv'];
+// Decides which date windows each source needs. Saved history is reused; only new days, the last saved week,
+// days before the saved history, and windows that failed last time are downloaded.
+export function syncPlan(previous, { requestedFrom, now, full = false }) {
+  const everything = Object.fromEntries(SOURCES.map(source => [source, [[requestedFrom, now]]]));
+  if (full || !previous?.requestedTo || !previous.completedAt) return { coveredFrom: requestedFrom, windows: everything };
+  // A gap between the last sync and this range means older history is no longer continuous.
+  const continuous = previous.requestedTo >= shiftDay(requestedFrom, -1);
+  const savedFrom = previous.coveredFrom || previous.requestedFrom;
+  const coveredFrom = continuous ? [savedFrom, requestedFrom].sort()[0] : requestedFrom;
+  // Re-fetch the last saved week: late uploads and reprocessed sleep change recent days.
+  const recent = [[requestedFrom, shiftDay(previous.requestedTo, -6)].sort().at(-1), now];
+  const older = continuous ? [requestedFrom, [shiftDay(savedFrom, -1), now].sort()[0]] : [requestedFrom, now];
+  const windows = Object.fromEntries(SOURCES.map(source => {
+    const failed = (previous.warnings || []).filter(w => w.source === source && validDay(w.startDate) && validDay(w.endDate))
+      .map(w => [[w.startDate, requestedFrom].sort().at(-1), [w.endDate, now].sort()[0]]);
+    return [source, unionRanges([recent, older, ...failed])];
+  }));
+  // History saved before newer activity fields were kept is re-downloaded once.
+  if (!(previous.activityFields >= ACTIVITY_FIELDS)) windows.activities = [[requestedFrom, now]];
+  return { coveredFrom, windows };
+}
 export async function syncGarmin(snapshot, key, { days = 90, full = false, now = isoDay(),
   fetchImpl = fetch, signal, onProgress = () => {} } = {}) {
   const requestedFrom = shiftDay(now, 1 - days);
-  // Re-fetch the latest week, which can include late uploads and edited/reprocessed sleep.
-  const previous = snapshot.sync;
-  const canIncrement = !full && previous?.fullySuccessful && previous.requestedFrom <= requestedFrom
-    && previous.requestedTo >= shiftDay(now, -7) && previous.activityFields >= ACTIVITY_FIELDS;
-  const from = canIncrement ? [requestedFrom, shiftDay(previous.requestedTo, -6)].sort().at(-1) : requestedFrom;
+  const { coveredFrom, windows } = syncPlan(snapshot.sync, { requestedFrom, now, full });
+  const starts = Object.values(windows).flat().map(([start]) => start).sort();
   const result = structuredClone(snapshot);
-  const attempt = { attemptedAt: new Date().toISOString(), requestedFrom, requestedTo: now,
-    fetchedFrom: from, fetchedTo: now, activityFields: ACTIVITY_FIELDS, fullySuccessful: false, warnings: [], coverage: [] };
+  const attempt = { attemptedAt: new Date().toISOString(), requestedFrom, requestedTo: now, coveredFrom,
+    fetchedFrom: starts[0] || now, fetchedTo: now, activityFields: ACTIVITY_FIELDS, fullySuccessful: false, warnings: [], coverage: [] };
   const client = new GarminClient(key, { fetchImpl, signal, onProgress });
   try {
     onProgress({ message: 'Connecting to Garmin…' });
     await client.authenticate();
     let completed = 0;
-    const chunks = dateChunks(from, now);
-    const total = chunks.length * 3 + 1;
+    const sources = [
+      { name: 'daily', label: 'daily health', path: '/usersummary-service/v2/dailysummaries', property: 'data', normalize: normalizeDaily },
+      { name: 'sleep', label: 'sleep', path: '/sleep-service/sleep/dailySleepSummariesByDate', property: null, normalize: normalizeSleep },
+      { name: 'hrv', label: 'HRV', path: null, property: 'hrvSummaries', normalize: normalizeHrv },
+    ].map(source => ({ ...source, chunks: windows[source.name].flatMap(([start, end]) => dateChunks(start, end)) }));
+    const total = windows.activities.length + sources.reduce((sum, source) => sum + source.chunks.length, 0);
     const progress = (message) => onProgress({ message, completed, total });
     const recordFailure = (source, startDate, endDate, error) => {
       if (signal?.aborted) throw signal.reason;
@@ -115,31 +147,28 @@ export async function syncGarmin(snapshot, key, { days = 90, full = false, now =
       if (error.status === 401 || error.fatal) throw error;
       attempt.warnings.push({ source, startDate, endDate, message: error.message, status: error.status || 502 });
     };
-    progress('Downloading activity history…');
-    try {
-      let records = [], offset = 0;
-      const limit = 100;
-      for (;;) {
-        const page = arrayResponse(await client.get('/activitylist-service/activities/search/activities', {
-          start: offset, limit, startDate: from, endDate: now, sortOrder: 'desc', excludeChildren: true,
-        }), null, 'activity');
-        records.push(...page.map(normalizeActivity).filter(Boolean));
-        if (page.length < limit) break;
-        offset += page.length;
-        if (offset >= 10000) throw new GarminError('Activity history exceeded the sync limit. Choose a shorter range.');
-        await pause(120, signal);
-      }
-      result.activities = mergeRecords(result.activities, records, 'id');
-      attempt.coverage.push({ source: 'activities', startDate: from, endDate: now, records: records.length });
-    } catch (e) { recordFailure('activities', from, now, e); }
-    completed++;
-    const sources = [
-      { name: 'daily', label: 'daily health', path: '/usersummary-service/v2/dailysummaries', property: 'data', normalize: normalizeDaily },
-      { name: 'sleep', label: 'sleep', path: '/sleep-service/sleep/dailySleepSummariesByDate', property: null, normalize: normalizeSleep },
-      { name: 'hrv', label: 'HRV', path: null, property: 'hrvSummaries', normalize: normalizeHrv },
-    ];
+    for (const [from, to] of windows.activities) {
+      progress(`Downloading activities · ${from} to ${to}`);
+      try {
+        let records = [], offset = 0;
+        const limit = 100;
+        for (;;) {
+          const page = arrayResponse(await client.get('/activitylist-service/activities/search/activities', {
+            start: offset, limit, startDate: from, endDate: to, sortOrder: 'desc', excludeChildren: true,
+          }), null, 'activity');
+          records.push(...page.map(normalizeActivity).filter(Boolean));
+          if (page.length < limit) break;
+          offset += page.length;
+          if (offset >= 10000) throw new GarminError('Activity history exceeded the sync limit. Choose a shorter range.');
+          await pause(120, signal);
+        }
+        result.activities = mergeRecords(result.activities, records, 'id');
+        attempt.coverage.push({ source: 'activities', startDate: from, endDate: to, records: records.length });
+      } catch (e) { recordFailure('activities', from, to, e); }
+      completed++;
+    }
     for (const source of sources) {
-      for (const [startDate, endDate] of chunks) {
+      for (const [startDate, endDate] of source.chunks) {
         progress(`Downloading ${source.label} · ${startDate} to ${endDate}`);
         try {
           const data = source.path
