@@ -80,7 +80,7 @@ Both paths are shown under **Data & connection** in the local app. Tools: `garmi
 
 ## Fork and run your own copy
 
-1. **Fork** [MarkWarneke/garmin](https://github.com/MarkWarneke/garmin) on GitHub and clone your fork.
+1. **Fork** [MarkWarneke/garmin](https://github.com/MarkWarneke/garmin) on GitHub and clone your fork. Forks may be used and changed for any noncommercial purpose; see [License](#license).
 2. **Install and test:**
 
    ```sh
@@ -123,6 +123,12 @@ Tests use synthetic Garmin responses and temporary directories, and never contac
 - The Worker accepts only same-origin requests, a fixed set of Garmin operations, bounded dates and page sizes, and never echoes Garmin error bodies.
 - Garmin keys can be set to expire after 30, 90, or 180 days, or one year. Access tokens last at most 24 hours.
 - Activity names from Garmin are treated as untrusted data in every prompt.
+
+## License
+
+Cadence is free to use, modify, and share for **noncommercial** purposes under the [PolyForm Noncommercial License 1.0.0](LICENSE.md). That includes personal training, hobby projects, research, education, and use by charities and public institutions. Commercial use, such as selling it, offering it as a paid service, or using it inside a business, needs separate permission: [open an issue](https://github.com/MarkWarneke/garmin/issues) to ask. Keep the `Required Notice` line from `LICENSE.md` in copies and forks.
+
+HyperUI-derived UI patterns remain under their MIT license; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ## References
 

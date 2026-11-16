@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "description": "Local Garmin dashboard and a private data connection for ChatGPT desktop and Codex",
+  "license": "PolyForm-Noncommercial-1.0.0",
   "engines": {
     "node": ">=24.0.0"
   },
