@@ -115,3 +115,13 @@ test('malformed folder data is not silently overwritten', async () => {
   await assert.rejects(readFolder(directory), /not valid JSON/);
   assert.equal(directory.contents, '{invalid');
 });
+test('Worker relays the training settings and activity detail operations with validated parameters', async () => {
+  const mock = mockGarmin(); const worker = createWorker(mock);
+  for (const [op, body] of [['settings', {}], ['zones', {}], ['weight', { startDate: '2026-10-17', endDate: '2026-11-16' }],
+    ['details', { activityId: '1' }], ['workouts', { activityId: '1' }]]) {
+    assert.equal((await worker.fetch(request('/api/garmin/' + op, body), {})).status, 200, op);
+  }
+  assert.equal((await worker.fetch(request('/api/garmin/details', { activityId: '1/../../x' }), {})).status, 400);
+  assert.equal((await worker.fetch(request('/api/garmin/weight', { startDate: '2026-01-01', endDate: '2026-11-16' }), {})).status, 400);
+  assert.equal(mock.calls.find(c => c.url.pathname.endsWith('heartRateZones/v2')).url.searchParams.get('generateDefaults'), 'false');
+});

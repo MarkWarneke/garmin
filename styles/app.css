@@ -216,6 +216,8 @@
   .profile-field label { @apply mt-3 mb-1 text-xs; }
   .profile-field input, .profile-field select { @apply py-2; }
   dialog textarea { @apply w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm shadow-xs focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500; }
+  .garmin-tag { @apply ml-1 rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700; }
+  .garmin-note { @apply mt-5 rounded-lg border border-emerald-100 bg-emerald-50 p-3 text-xs/5 text-emerald-800; }
   .field-hint { @apply mt-1 text-[11px]/5 text-gray-500; }
   .prompt-group #plan-range { @apply inline-block w-auto px-2 py-0.5 text-[11px]; }
   .prompt-group textarea { @apply mt-3 font-mono text-xs/5; }

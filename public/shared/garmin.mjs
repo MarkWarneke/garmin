@@ -1,9 +1,12 @@
 import { dateChunks, isoDay, shiftDay, validDay, normalizeActivity, normalizeDaily, normalizeSleep, normalizeHrv,
-  mergeRecords } from './model.mjs';
+  normalizeActivityDetails, normalizeAthlete, mergeRecords } from './model.mjs';
 
 const API = 'https://personal.connectapi.garmin.com';
 // Bump when normalizeActivity keeps new fields, so the next sync re-downloads older activities once.
 export const ACTIVITY_FIELDS = 2;
+// Activity details cost one request each; they are fetched once per activity and spread over syncs.
+export const DETAILS_PER_SYNC = 150;
+const DETAIL_INTERVALS = /^(INTERVAL_|WORKOUT_ROUND|RUN_ACTIVE|RUN_REST)/;
 const TOKEN_PATH = '/personalapitoken-service/personal-api/personal-api-key/token';
 export class GarminError extends Error {
   constructor(message, status = 502) { super(message); this.status = status; }
@@ -139,7 +142,10 @@ export async function syncGarmin(snapshot, key, { days = 90, full = false, now =
       { name: 'sleep', label: 'sleep', path: '/sleep-service/sleep/dailySleepSummariesByDate', property: null, normalize: normalizeSleep },
       { name: 'hrv', label: 'HRV', path: null, property: 'hrvSummaries', normalize: normalizeHrv },
     ].map(source => ({ ...source, chunks: windows[source.name].flatMap(([start, end]) => dateChunks(start, end)) }));
-    const total = windows.activities.length + sources.reduce((sum, source) => sum + source.chunks.length, 0);
+    // Details for activities in the requested range that have none yet, newest first.
+    const pending = () => result.activities.filter(a => a.date >= requestedFrom && !a.detailsVersion)
+      .sort((a, b) => b.date.localeCompare(a.date)).slice(0, DETAILS_PER_SYNC);
+    let total = windows.activities.length + sources.reduce((sum, source) => sum + source.chunks.length, 0) + 3;
     const progress = (message) => onProgress({ message, completed, total });
     const recordFailure = (source, startDate, endDate, error) => {
       if (signal?.aborted) throw signal.reason;
@@ -182,6 +188,36 @@ export async function syncGarmin(snapshot, key, { days = 90, full = false, now =
         await pause(120, signal);
       }
     }
+    progress('Downloading training settings…');
+    const athlete = {};
+    for (const [name, path, query] of [['settings', '/userprofile-service/userprofile/settings', {}],
+      ['zones', '/biometric-service/heartRateZones/v2', { generateDefaults: false }],
+      ['weight', `/weight-service/weight/range/${shiftDay(now, -30)}/${now}`, {}]]) {
+      try { athlete[name] = await client.get(path, query); attempt.coverage.push({ source: name, startDate: now, endDate: now, records: athlete[name] ? 1 : 0 }); }
+      catch (e) { recordFailure(name, now, now, e); }
+      completed++;
+      await pause(120, signal);
+    }
+    const queue = pending();
+    total += queue.length;
+    for (const activity of queue) {
+      progress(`Downloading activity details · ${activity.date}`);
+      try {
+        const details = await client.get(`/activity-service/activity/${encodeURIComponent(activity.id)}`);
+        // The planned workout is a second request, so it is only asked for when Garmin recorded structured intervals.
+        const structured = details?.splitSummaries?.some?.(x => DETAIL_INTERVALS.test(x?.splitType || ''));
+        const workouts = structured ? await client.get(`/activity-service/activity/${encodeURIComponent(activity.id)}/workouts`) : null;
+        result.activities = mergeRecords(result.activities, [{ id: activity.id, ...normalizeActivityDetails(details, workouts) }], 'id');
+      } catch (e) { recordFailure('details', activity.date, activity.date, e); }
+      completed++;
+      await pause(120, signal);
+    }
+    if (queue.length) attempt.coverage.push({ source: 'details', startDate: queue.at(-1).date, endDate: queue[0].date, records: queue.length });
+    const remaining = result.activities.filter(a => a.date >= requestedFrom && !a.detailsVersion).length;
+    if (remaining) attempt.detailsRemaining = remaining;
+    // A failed settings request keeps the values saved by an earlier sync.
+    const fresh = Object.entries(normalizeAthlete(athlete, result.activities)).filter(([, v]) => v != null);
+    if (fresh.length) result.athlete = { ...result.athlete, ...Object.fromEntries(fresh), updatedAt: new Date().toISOString() };
     if (!attempt.coverage.length) throw new GarminError('Garmin did not return any usable datasets. Existing data has been retained.');
     attempt.completedAt = new Date().toISOString();
     attempt.fullySuccessful = attempt.warnings.length === 0;

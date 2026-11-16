@@ -8,6 +8,19 @@ export const daily = (day = '2026-11-16') => ({ calendarDate: day, heartRate: { 
 export const sleep = (day = '2026-11-16') => ({ calendarDate: day, sleepTimeSeconds: 27000, deepSleepSeconds: 5000,
   remSleepSeconds: 6000, lightSleepSeconds: 16000, sleepScores: { overall: { value: 85 } } });
 export const hrv = (day = '2026-11-16') => ({ calendarDate: day, lastNightAvg: 55, weeklyAvg: 53, status: 'BALANCED' });
+export const settings = () => ({ displayName: 'private-display-name', availableTrainingDays: ['SATURDAY', 'MONDAY', 'WEDNESDAY'],
+  preferredLongTrainingDays: ['SATURDAY'], timeZone: 'Europe/Berlin' });
+export const zones = () => [{ sport: 'DEFAULT', trainingMethod: 'HR_MAX', maxHeartRateUsed: 190, restingHeartRateUsed: 50, zone1Floor: 95 },
+  { sport: 'CYCLING', trainingMethod: 'LACTATE_THRESHOLD', maxHeartRateUsed: 189, restingHeartRateUsed: 52, lactateThresholdHeartRateUsed: 168,
+    zone1Floor: 101, zone2Floor: 126, zone3Floor: 145, zone4Floor: 160, zone5Floor: 170 }];
+export const weight = () => ({ dailyWeightSummaries: [{ summaryDate: '2026-11-10', latestWeight: { calendarDate: '2026-11-10', weight: 80.4 } }] });
+export const details = () => ({ activityId: 1, userProfileId: 1234, summaryDTO: { functionalThresholdPower: 250, directWorkoutRpe: 70,
+  directWorkoutFeel: 75, normalizedPower: 205, startLatitude: 52.52 },
+  splitSummaries: [{ splitType: 'INTERVAL_ACTIVE', noOfSplits: 5, duration: 1500, averagePower: 260, normalizedPower: 262,
+    averageHR: 165, startLatitude: 52.52, startLongitude: 13.4, endLatitude: 52.53, endLongitude: 13.41 },
+  { splitType: 'INTERVAL_REST', noOfSplits: 4, duration: 600, averagePower: 120 }] });
+export const workouts = () => [{ workoutName: '5x5 VO2', steps: [{ stepIndex: 1, intensity: 'INTERVAL', durationType: 'TIME',
+  durationValue: 300, targetType: 'POWER', targetValueLow: 255, targetValueHigh: 270 }] }];
 export const response = (data, status = 200, headers) => new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json', ...headers } });
 export function mockGarmin(handler) {
   const calls = [];
@@ -20,6 +33,11 @@ export function mockGarmin(handler) {
     if (parsed.pathname.includes('dailysummaries')) return response({ data: [daily()] });
     if (parsed.pathname.includes('dailySleepSummariesByDate')) return response([sleep()]);
     if (parsed.pathname.includes('/hrv/daily/')) return response({ hrvSummaries: [hrv()] });
+    if (parsed.pathname.endsWith('/userprofile/settings')) return response(settings());
+    if (parsed.pathname.endsWith('/heartRateZones/v2')) return response(zones());
+    if (parsed.pathname.includes('/weight/range/')) return response(weight());
+    if (/\/activity-service\/activity\/\d+$/.test(parsed.pathname)) return response(details());
+    if (/\/activity-service\/activity\/\d+\/workouts$/.test(parsed.pathname)) return response(workouts());
     throw new Error(`Unexpected test endpoint: ${parsed.pathname}`);
   };
   return { fetchImpl, calls };

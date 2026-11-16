@@ -97,9 +97,9 @@ export function createApp({ directory, fetchImpl, syncImpl = syncGarmin } = {}) 
         return;
       }
       if (req.method === 'GET') {
-        const files = { '/': 'index.html', '/app.js': 'app.js', '/styles.css': 'styles.css', '/favicon.svg': 'favicon.svg',
-          '/shared/handoff.mjs': 'shared/handoff.mjs', '/shared/profile.mjs': 'shared/profile.mjs', '/shared/model.mjs': 'shared/model.mjs' };
-        const file = files[url.pathname];
+        const files = { '/': 'index.html', '/app.js': 'app.js', '/styles.css': 'styles.css', '/favicon.svg': 'favicon.svg' };
+        // Browser modules shared with the Worker and Node; the name pattern prevents path traversal.
+        const file = files[url.pathname] || (/^\/shared\/[a-z-]+\.mjs$/.test(url.pathname) ? url.pathname.slice(1) : null);
         if (file) {
           const mime = file.endsWith('.html') ? 'text/html' : file.endsWith('.css') ? 'text/css' : file.endsWith('.svg') ? 'image/svg+xml' : 'text/javascript';
           res.writeHead(200, { 'Content-Type': mime + '; charset=utf-8' });

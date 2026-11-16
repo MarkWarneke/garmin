@@ -73,10 +73,16 @@ export function createProxyFetch(fetchImpl = fetch) {
       '/activitylist-service/activities/search/activities': 'activities',
       '/usersummary-service/v2/dailysummaries': 'daily',
       '/sleep-service/sleep/dailySleepSummariesByDate': 'sleep',
+      '/userprofile-service/userprofile/settings': 'settings',
+      '/biometric-service/heartRateZones/v2': 'zones',
     };
     let operation = routes[url.pathname], query = Object.fromEntries(url.searchParams);
     const hrv = url.pathname.match(/^\/hrv-service\/hrv\/daily\/(\d{4}-\d{2}-\d{2})\/(\d{4}-\d{2}-\d{2})$/);
     if (hrv) { operation = 'hrv'; query = { startDate: hrv[1], endDate: hrv[2] }; }
+    const weight = url.pathname.match(/^\/weight-service\/weight\/range\/(\d{4}-\d{2}-\d{2})\/(\d{4}-\d{2}-\d{2})$/);
+    if (weight) { operation = 'weight'; query = { startDate: weight[1], endDate: weight[2] }; }
+    const activity = url.pathname.match(/^\/activity-service\/activity\/(\d{1,20})(\/workouts)?$/);
+    if (activity) { operation = activity[2] ? 'workouts' : 'details'; query = { activityId: activity[1] }; }
     if (!operation) throw new GarminError('Unsupported Garmin operation.', 400);
     let response;
     try {

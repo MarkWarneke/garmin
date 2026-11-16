@@ -25,7 +25,8 @@ const icon = (name) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColo
 const nav = [['overview', 'Overview'], ['activities', 'Activities'], ['health', 'Health & recovery'], ['plan', 'Training plan'], ['connection', 'Data & connection']];
 const categories = { cycling: { label: 'Bike', color: '#db875c' }, gym: { label: 'Gym', color: '#9fae83' }, running: { label: 'Run', color: '#86a5b4' }, other: { label: 'Other', color: '#72a392' } };
 function category(sport) {
-  if (/cycl|biking/.test(sport)) return 'cycling';
+  // Garmin keys include road_biking, indoor_cycling, virtual_ride, and e_bike_fitness.
+  if (/cycl|bik|ride/.test(sport)) return 'cycling';
   if (/strength|fitness|cardio|gym/.test(sport)) return 'gym';
   if (/running|run$/.test(sport)) return 'running';
   return 'other';
@@ -37,7 +38,7 @@ const duration = (seconds) => {
   return hours ? `${hours}h ${String(mins % 60).padStart(2, '0')}m` : `${mins}m`;
 };
 const numeric = (n, decimals = 0) => n == null ? '—' : n.toLocaleString('en-GB', { maximumFractionDigits: decimals });
-const km = meters => meters == null ? '—' : numeric(meters / 1000, 1);
+const km = meters => meters == null ? '—' : (meters / 1000).toLocaleString('en-GB', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 const dayLabel = (day, options = { day: 'numeric', month: 'short' }) => new Intl.DateTimeFormat('en-GB', options).format(new Date(day + 'T12:00:00Z'));
 const shiftDay = (day, n) => { const d = new Date(day + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
 let data, bootstrap, range = 30, busy = false, lastError = '', activitySearch = '', activitySport = 'all';
@@ -85,7 +86,7 @@ async function localFetch(path, options) {
   catch (error) {
     if (error.name === 'AbortError') throw error;
     throw new Error(['127.0.0.1', 'localhost', '[::1]'].includes(location.hostname)
-      ? 'Cannot reach Cadence on this Mac. Open Start Cadence.command, then try syncing again.'
+      ? 'Cannot reach the Cadence server on this computer. Start it with npm start (or Start Cadence.command on a Mac), then try again.'
       : 'Cannot reach Cadence. Check your connection and try again.');
   }
 }
@@ -139,7 +140,7 @@ function weeklyChart() {
     }).join('');
     return `${rects}<text x="${79 + i * 74}" y="193" text-anchor="middle" fill="${i === 6 ? '#cf754c' : '#9aa28e'}" font-size="10">${dayLabel(days[i], { weekday: 'short' })}</text>`;
   }).join('');
-  return `<div class="weekly-chart-wrap"><svg class="weekly-svg" viewBox="0 0 580 210" role="img" aria-label="Training duration by sport for the last seven days">${grid}${bars}</svg>${totals.some(v => v > 0) ? '' : '<div class="chart-empty"><strong>Your week, at a glance.</strong><span>Training sessions will appear here after syncing.</span></div>'}</div><div class="legend">${Object.entries(categories).map(([key, c]) => `<span><i class="legend-${key}"></i>${c.label}</span>`).join('')}</div>`;
+  return `<div class="weekly-chart-wrap"><svg class="weekly-svg" viewBox="0 0 580 210" role="img" aria-label="Training duration by sport for the last seven days">${grid}${bars}</svg>${totals.some(v => v > 0) ? '' : `<div class="chart-empty"><strong>${data.sync ? 'A quiet week.' : 'Your week, at a glance.'}</strong><span>${data.sync ? 'No training recorded in the last seven days.' : 'Training sessions will appear here after syncing.'}</span></div>`}</div><div class="legend">${Object.entries(categories).map(([key, c]) => `<span><i class="legend-${key}"></i>${c.label}</span>`).join('')}</div>`;
 }
 function sparkline(field, color, compact = false) {
   const count = compact ? 14 : Math.min(range, 90), end = data.range.endDate;
@@ -180,7 +181,7 @@ function overview() {
     + `<div class="stat-grid">${stat('Time in motion', data.sync ? duration(data.summary.durationSeconds) : '—', '', `Last ${range} days · recorded activities`, 'time')}${stat('Training sessions', data.sync ? numeric(data.summary.activities) : '—', '', data.sync ? km(data.summary.distanceMeters) + ' km covered in this period' : 'Bike, gym, and everything in between', 'activities')}${stat('Latest sleep', duration(latest('sleepSeconds')?.sleepSeconds ?? null), '', metricCaption('sleepSeconds'), 'sleep')}${stat('Overnight HRV', numeric(latest('hrvMs')?.hrvMs ?? null), 'ms', metricCaption('hrvMs'), 'hrv')}</div>`
     + `<div class="content-grid"><section class="card"><div class="card-heading"><div><h2>A week in motion</h2><p class="sub">${dayLabel(shiftDay(data.range.endDate, -6))} – ${dayLabel(data.range.endDate)} · duration by sport</p></div><span class="pill">LAST 7 DAYS</span></div><div class="card-inner">${weeklyChart()}</div></section>${recovery()}</div>`
     + activityTable(data.activities.slice(0, 5))
-    + `<div class="split-bottom"><section class="card next-card"><div class="card-inner"><p class="eyebrow">THE NEXT CHAPTER</p><h3>Make room for your next goal.</h3><p>Bike, gym, bouldering. A training plan that fits your life starts with understanding where you are today.</p><button class="text-button" data-route="plan">Your training workspace <span>↗</span></button></div></section><section class="card export-card"><div class="card-inner"><h3>Start a conversation about your training.</h3><p>Take a structured summary into ChatGPT, or let Codex work with your saved local data. You choose what to share.</p><div class="export-actions"><button class="button button-secondary" data-plan ${!data.sync ? 'disabled' : ''}>Create plan prompt ↗</button><button class="text-button" data-route="plan">How it works</button></div></div></section></div>`;
+    + `<div class="split-bottom"><section class="card next-card"><div class="card-inner"><p class="eyebrow">THE NEXT CHAPTER</p><h3>Make room for your next goal.</h3><p>Bike, gym, bouldering. A training plan that fits your life starts with understanding where you are today.</p><button class="text-button" data-route="plan">Your training workspace <span>↗</span></button></div></section><section class="card export-card"><div class="card-inner"><h3>Start a conversation about your training.</h3><p>Answer a few questions and copy a plan prompt with your Garmin data into ChatGPT or Claude. You choose what to share.</p><div class="export-actions"><button class="button button-secondary" data-plan ${!data.sync ? 'disabled' : ''}>Create plan prompt ↗</button><button class="text-button" data-route="plan">How it works</button></div></div></section></div>`;
 }
 function activities() {
   const items = data.activities.filter(a => (activitySport === 'all' || category(a.sport) === activitySport)
@@ -215,7 +216,7 @@ function plan() {
   const end = data.range.endDate, weekday = new Date(end + 'T12:00:00Z').getUTCDay();
   const monday = shiftDay(end, -((weekday + 6) % 7));
   return heading('A PLAN THAT FITS YOUR LIFE', 'Your next block starts here.', 'Tell ChatGPT or Claude what your data can’t, and get a plan built around your goals.', false)
-    + `<section class="card"><div class="card-heading"><div><h2>Your training calendar</h2><p class="sub">${dayLabel(monday)} – ${dayLabel(shiftDay(monday, 6))}</p></div><span class="pill orange">NO PLAN YET</span></div><div class="timeline">${Array.from({ length: 7 }, (_, i) => { const date = shiftDay(monday, i); return `<div class="calendar-day"><span>${dayLabel(date, { weekday: 'short' })}</span><b>${dayLabel(date, { day: 'numeric' })}</b><i></i></div>`; }).join('')}</div><div class="calendar-note"><strong>Good plans begin with a conversation.</strong>When you’re ready, we’ll discuss your goals, available time, and how bike, gym, and bouldering fit together.</div></section>` + planCards();
+    + `<section class="card"><div class="card-heading"><div><h2>Your training calendar</h2><p class="sub">${dayLabel(monday)} – ${dayLabel(shiftDay(monday, 6))}</p></div><span class="pill orange">NO PLAN YET</span></div><div class="timeline">${Array.from({ length: 7 }, (_, i) => { const date = shiftDay(monday, i); return `<div class="calendar-day"><span>${dayLabel(date, { weekday: 'short' })}</span><b>${dayLabel(date, { day: 'numeric' })}</b><i></i></div>`; }).join('')}</div><div class="calendar-note"><strong>Good plans begin with a conversation.</strong>Create a plan prompt below and talk it through with ChatGPT or Claude: your goals, available time, and how bike, gym, and bouldering fit together.</div></section>` + planCards();
 }
 function connection() {
   if (cloudWorkspace) return cloudConnection();
@@ -239,7 +240,7 @@ function howItWorks() {
   ];
   return `<section class="card panel"><p class="eyebrow">HOW CADENCE WORKS</p><h2>What happens to your data.</h2><ol class="how-list">${steps.join('')}</ol>`
     + `<div class="setting-row"><div><strong>Export your data</strong><p>Download activities and daily health for the selected range as JSON.</p></div><div class="export-actions">${rangeControl()}<a class="button button-secondary ${!data.sync ? 'is-disabled' : ''}" href="/api/export?days=${range}" ${!data.sync ? 'aria-disabled="true" tabindex="-1"' : ''}>Download JSON ↓</a></div></div>`
-    + (cloud ? '' : `<details><summary>Optional: direct access for ChatGPT desktop and Codex</summary><p>A small, optional MCP adapter lets ChatGPT desktop and Codex read the saved history and your athlete profile. It only runs when a client starts it, and never sees your Garmin key. In the desktop app’s MCP server settings, add a STDIO server with:</p><code class="code-box">Command: ${escapeHtml(bootstrap.nodePath)}\nArguments: ${escapeHtml(bootstrap.projectDir + 'src/mcp.mjs')}</code></details>`)
+    + (cloud ? '' : `<details><summary>Optional: direct access for desktop assistants (MCP)</summary><p>A small, optional MCP adapter lets ChatGPT desktop and Codex read the saved history and your athlete profile. It only runs when a client starts it, and never sees your Garmin key. In the desktop app’s MCP server settings, add a STDIO server with:</p><code class="code-box">Command: ${escapeHtml(bootstrap.nodePath)}\nArguments: ${escapeHtml(bootstrap.projectDir + 'src/mcp.mjs')}</code></details>`)
     + `<div class="setting-row"><div><strong>Source code</strong><p>Read the code, report an issue, or fork Cadence to run your own copy. Free for noncommercial use under the PolyForm Noncommercial License.</p></div><a class="button button-secondary" href="${REPOSITORY}" target="_blank" rel="noreferrer">View on GitHub ↗</a></div></section>`;
 }
 function folderBanner() {
@@ -352,12 +353,21 @@ const profileApi = {
     return value;
   },
 };
-function profileField(f, value) {
+// Garmin profile values offered for empty fields. They are saved only when you save the profile.
+const dayName = d => d.charAt(0) + d.slice(1).toLowerCase();
+function garminSuggestions(athlete) {
+  if (!athlete) return {};
+  const days = athlete.trainingDays || [], long = athlete.longTrainingDays || [];
+  return { ftpWatts: athlete.ftpWatts, ftpTestDate: null, maxHeartRate: athlete.maxHeartRate, thresholdHeartRate: athlete.lactateThresholdHeartRate,
+    weightKg: athlete.weightKg, daysPerWeek: days.length || null,
+    availability: days.length ? `Training days: ${days.map(dayName).join(', ')}${long.length ? `; long sessions on ${long.map(dayName).join(', ')}` : ''}` : null };
+}
+function profileField(f, value, fromGarmin = false) {
   const id = 'profile-' + f.name, attrs = `id="${id}" name="${f.name}" aria-describedby="${id}-why"`;
   const input = f.type === 'textarea' ? `<textarea ${attrs} rows="4" maxlength="${f.max}" placeholder="${escapeHtml(f.placeholder || '')}">${escapeHtml(value ?? '')}</textarea>`
     : f.type === 'select' ? `<select ${attrs}>${f.options.map(([v, label]) => `<option value="${v}" ${(value ?? '') === v ? 'selected' : ''}>${label}</option>`).join('')}</select>`
     : `<input ${attrs} type="${f.type}" value="${escapeHtml(value ?? '')}" ${f.type === 'number' ? `min="${f.min}" max="${f.max}" step="${f.step || 1}" inputmode="decimal"` : ''} ${f.max && f.type === 'text' ? `maxlength="${f.max}"` : ''} placeholder="${escapeHtml(f.placeholder || '')}">`;
-  return `<div class="profile-field ${f.type === 'textarea' ? 'wide' : ''}"><label for="${id}">${f.label}</label>${input}<p class="field-hint" id="${id}-why">${f.why}</p></div>`;
+  return `<div class="profile-field ${f.type === 'textarea' ? 'wide' : ''}"><label for="${id}">${f.label}${fromGarmin ? ' <span class="garmin-tag">from Garmin</span>' : ''}</label>${input}<p class="field-hint" id="${id}-why">${f.why}</p></div>`;
 }
 const formProfile = () => normalizeProfile(Object.fromEntries(new FormData($('#plan-form'))));
 function updatePrompt() {
@@ -372,7 +382,10 @@ async function openPlan() {
   let profile;
   try { profile = await profileApi.load(); } catch (error) { return notify(error.message, true); }
   const groups = [...new Set(PROFILE_FIELDS.map(f => f.group))];
-  $('#profile-fields').innerHTML = groups.map(group => `<fieldset class="profile-group"><legend>${group}</legend><div class="profile-grid">${PROFILE_FIELDS.filter(f => f.group === group).map(f => profileField(f, profile[f.name])).join('')}</div></fieldset>`).join('');
+  const suggested = garminSuggestions(data.athlete);
+  const prefilled = PROFILE_FIELDS.filter(f => profile[f.name] == null && suggested[f.name] != null).map(f => f.name);
+  $('#profile-fields').innerHTML = (prefilled.length ? `<p class="garmin-note">Pre-filled from your Garmin settings: ${prefilled.map(n => PROFILE_FIELDS.find(f => f.name === n).label.toLowerCase()).join(', ')}. Check them and save.</p>` : '')
+    + groups.map(group => `<fieldset class="profile-group"><legend>${group}</legend><div class="profile-grid">${PROFILE_FIELDS.filter(f => f.group === group).map(f => profileField(f, profile[f.name] ?? suggested[f.name], prefilled.includes(f.name))).join('')}</div></fieldset>`).join('');
   promptEdited = profile.prompt != null;
   $('#plan-prompt').value = profile.prompt ?? '';
   $('#plan-error').hidden = true;
@@ -389,7 +402,7 @@ function planError(message) { $('#plan-error').textContent = message; $('#plan-e
 function showActivity(id) {
   const a = data.activities.find(a => a.id === id); if (!a) return;
   const metric = (label, value, unit = '') => `<div class="detail-cell"><dt>${label}</dt><dd>${value} <small>${unit}</small></dd></div>`;
-  $('#activity-detail').innerHTML = `<p class="eyebrow">${escapeHtml(sportLabel(a.sport))}</p><h2 id="activity-title">${escapeHtml(a.name)}</h2><p class="muted">${dayLabel(a.date)}${a.localStart ? ' · ' + escapeHtml(a.localStart.slice(11, 16)) : ''}</p><dl class="detail-grid">${metric('Duration', duration(a.durationSeconds))}${metric('Distance', km(a.distanceMeters), 'km')}${metric('Average heart rate', numeric(a.averageHeartRate), 'bpm')}${metric('Maximum heart rate', numeric(a.maxHeartRate), 'bpm')}${metric('Elevation gain', numeric(a.elevationMeters), 'm')}${metric('Garmin activity load', numeric(a.trainingLoad, 1))}${metric('Aerobic effect', numeric(a.aerobicEffect, 1))}${metric('Anaerobic effect', numeric(a.anaerobicEffect, 1))}${metric('Average power', numeric(a.averagePower), 'W')}${metric('Normalized power', numeric(a.normalizedPower), 'W')}${metric('Best 1-min power', numeric(a.bestPowerWatts?.[60] ?? null), 'W')}${metric('Best 20-min power', numeric(a.max20MinPower), 'W')}</dl><p class="attribution">Garmin device data via Garmin Connect Personal API · Device model not supplied by the activity-list endpoint.</p>`;
+  $('#activity-detail').innerHTML = `<p class="eyebrow">${escapeHtml(sportLabel(a.sport).toUpperCase())}</p><h2 id="activity-title">${escapeHtml(a.name)}</h2><p class="muted">${dayLabel(a.date)}${a.localStart ? ' · ' + escapeHtml(a.localStart.slice(11, 16)) : ''}</p><dl class="detail-grid">${metric('Duration', duration(a.durationSeconds))}${metric('Distance', km(a.distanceMeters), 'km')}${metric('Average heart rate', numeric(a.averageHeartRate), 'bpm')}${metric('Maximum heart rate', numeric(a.maxHeartRate), 'bpm')}${metric('Elevation gain', numeric(a.elevationMeters), 'm')}${metric('Garmin activity load', numeric(a.trainingLoad, 1))}${metric('Aerobic effect', numeric(a.aerobicEffect, 1))}${metric('Anaerobic effect', numeric(a.anaerobicEffect, 1))}${[['Average power', a.averagePower, 'W'], ['Normalized power', a.normalizedPower, 'W'], ['Best 1-min power', a.bestPowerWatts?.[60], 'W'], ['Best 20-min power', a.max20MinPower, 'W'], ['FTP at the time', a.ftpWatts, 'W'], ['Perceived effort', a.rpe, '/10']].filter(([, v]) => v != null).map(([label, v, unit]) => metric(label, numeric(v, unit === '/10' ? 1 : 0), unit)).join('')}</dl>${a.intervals ? `<p class="eyebrow">INTERVALS</p><dl class="detail-grid">${a.intervals.map(i => metric(sportLabel(i.type.toLowerCase().replace(/^interval_/, '')) + ` × ${numeric(i.count)}`, numeric(i.averagePower ?? i.averageHeartRate ?? null), i.averagePower != null ? 'W avg' : 'bpm avg')).join('')}</dl>` : ''}<p class="attribution">Garmin device data via Garmin Connect Personal API · Device model not supplied by the activity-list endpoint.</p>`;
   $('#activity-dialog').showModal();
 }
 document.addEventListener('click', async event => {

@@ -93,7 +93,7 @@ test('sync plans download only days missing from saved history', () => {
 test('a sync after a long break requests fewer health windows than a full sync', async () => {
   const mock = mockGarmin();
   const first = await syncGarmin(emptySnapshot(), 'test-key', { ...mock, days: 90, now: '2026-11-16' });
-  const healthCalls = () => mock.calls.filter(c => !/token|activities/.test(c.url.pathname)).length;
+  const healthCalls = () => mock.calls.filter(c => /dailysummaries|dailySleep|\/hrv\//.test(c.url.pathname)).length;
   const before = healthCalls();
   const later = await syncGarmin(first, 'test-key', { ...mock, days: 90, now: '2026-11-30' });
   assert.equal(healthCalls() - before, 6, 'two 14-day windows per health source instead of seven');
@@ -173,4 +173,41 @@ test('exports use only measured health days and filter activities by date', () =
   const exportData = selectData(snapshot, 7, '2026-11-16');
   assert.equal(exportData.activities.length, 1); assert.equal(exportData.summary.averageHrvMs, 50);
   assert.equal(exportData.summary.measuredDays.hrv, 2); assert.equal(exportData.summary.averageSleepSeconds, null);
+});
+test('sync saves Garmin training settings and activity details without names, IDs, or coordinates', async () => {
+  const mock = mockGarmin();
+  const snapshot = await syncGarmin(emptySnapshot(), 'test-key', { ...mock, days: 7, now: '2026-11-16' });
+  assert.equal(snapshot.sync.fullySuccessful, true);
+  assert.deepEqual(snapshot.athlete.trainingDays, ['MONDAY', 'WEDNESDAY', 'SATURDAY']);
+  assert.deepEqual(snapshot.athlete.longTrainingDays, ['SATURDAY']);
+  assert.equal(snapshot.athlete.maxHeartRate, 189, 'cycling zones are preferred');
+  assert.equal(snapshot.athlete.lactateThresholdHeartRate, 168);
+  assert.equal(snapshot.athlete.weightKg, 80.4); assert.equal(snapshot.athlete.ftpWatts, 250);
+  const [a] = snapshot.activities;
+  assert.equal(a.ftpWatts, 250); assert.equal(a.rpe, 7); assert.equal(a.feel, 75);
+  assert.deepEqual(a.intervals.map(i => [i.type, i.count, i.averagePower]), [['INTERVAL_ACTIVE', 5, 260], ['INTERVAL_REST', 4, 120]]);
+  assert.equal(a.plannedWorkout.steps[0].targetLow, 255);
+  assert.doesNotMatch(JSON.stringify(snapshot), /private-display-name|startLatitude|Longitude|userProfileId|52\.52/);
+  // Details are fetched once per activity, not on every sync.
+  const before = mock.calls.filter(c => c.url.pathname.includes('/activity-service/')).length;
+  await syncGarmin(snapshot, 'test-key', { ...mock, days: 7, now: '2026-11-16' });
+  assert.equal(mock.calls.filter(c => c.url.pathname.includes('/activity-service/')).length, before);
+});
+test('coaching metrics derive load, weekly totals, power curve, and FTP history from saved activities', () => {
+  const snapshot = emptySnapshot();
+  const ride = (id, date, extra) => ({ ...normalizeActivity({ ...activity(id, date), activityTrainingLoad: 100, normPower: 200,
+    maxAvgPower_60: 300 + id, hrTimeInZone_2: 1800, ...extra }) });
+  snapshot.activities = [ride(1, '2026-09-01', {}), { ...ride(2, '2026-10-12', {}), ftpWatts: 240 }, { ...ride(3, '2026-11-16', { trainingStressScore: 88 }), ftpWatts: 250 }];
+  const data = selectData(snapshot, 30, '2026-11-16');
+  const { coaching } = data;
+  assert.deepEqual(coaching.ftpHistory, [{ date: '2026-10-12', ftpWatts: 240 }, { date: '2026-11-16', ftpWatts: 250 }]);
+  assert.equal(coaching.powerCurve.allTime[60].watts, 303); assert.equal(coaching.powerCurve.last90Days[60].watts, 303);
+  assert.equal(coaching.trainingLoad.historyDays, 77); assert.equal(coaching.trainingLoad.reliable, true);
+  assert.ok(coaching.trainingLoad.current.fatigue > coaching.trainingLoad.current.fitness, 'a ride today raises fatigue faster than fitness');
+  assert.equal(coaching.weekly.length, 12); assert.equal(coaching.weekly.at(-1).sessions, 1);
+  assert.equal(coaching.weekly.at(-1).trainingStress, 88);
+  assert.deepEqual(coaching.weekly.at(-1).hrZoneMinutes, [0, 30, 0, 0, 0]);
+  assert.equal(data.activities[0].trainingStress, 88, 'Garmin TSS is used when present');
+  const estimated = selectData(snapshot, 60, '2026-11-16').activities.find(a => a.id === '2');
+  assert.equal(estimated.trainingStress, Math.round(3600 * 200 ** 2 / (240 ** 2 * 3600) * 100));
 });

@@ -48,7 +48,14 @@ function upstreamRoute(name, query) {
     return ['/activitylist-service/activities/search/activities', { start, limit, startDate: query.startDate,
       endDate: query.endDate, sortOrder: 'desc', excludeChildren: true }];
   }
+  if (name === 'settings') return ['/userprofile-service/userprofile/settings', {}];
+  if (name === 'zones') return ['/biometric-service/heartRateZones/v2', { generateDefaults: false }];
+  if (name === 'details' || name === 'workouts') {
+    if (typeof query.activityId !== 'string' || !/^\d{1,20}$/.test(query.activityId)) throw new GarminError('Invalid activity.', 400);
+    return [`/activity-service/activity/${query.activityId}${name === 'workouts' ? '/workouts' : ''}`, {}];
+  }
   const dates = range(query);
+  if (name === 'weight') return [`/weight-service/weight/range/${dates.startDate}/${dates.endDate}`, {}];
   if (name === 'daily') return ['/usersummary-service/v2/dailysummaries', dates];
   if (name === 'sleep') return ['/sleep-service/sleep/dailySleepSummariesByDate', dates];
   if (name === 'hrv') return [`/hrv-service/hrv/daily/${dates.startDate}/${dates.endDate}`, {}];

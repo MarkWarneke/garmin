@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { request } from 'node:http';
@@ -60,7 +60,9 @@ test('local API protects origins, validates requests, persists normalized histor
   assert.equal(profileFile.prompt, 'My own prompt'); assert.equal(profileFile.secret, undefined);
   assert.equal((await stat(join(directory, 'profile.json'))).mode & 0o777, 0o600);
   assert.equal(boot.profileFile, join(directory, 'profile.json'));
-  assert.equal((await get('/shared/profile.mjs')).status, 200);
+  // Every browser module must be served, or the app fails to load.
+  for (const name of await readdir(new URL('../public/shared/', import.meta.url))) assert.equal((await get('/shared/' + name)).status, 200, name);
+  assert.equal((await get('/shared/..%2Fserver.mjs')).status, 404);
   assert.equal((await get('/src/server.mjs')).status, 404);
   assert.equal((await get('/data/snapshot.json')).status, 404);
 });
