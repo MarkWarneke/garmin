@@ -40,7 +40,7 @@ export function createApp({ directory, fetchImpl, syncImpl = syncGarmin } = {}) 
     }
     try {
       if (req.method === 'GET' && url.pathname === '/api/bootstrap') {
-        return json(res, 200, { csrf, syncing, projectDir, dataFile: join(directory || dataDir, 'snapshot.json'),
+        return json(res, 200, { mode: 'local', csrf, syncing, projectDir, dataFile: join(directory || dataDir, 'snapshot.json'),
           nodePath: process.execPath });
       }
       if (req.method === 'GET' && ['/api/data', '/api/export', '/api/briefing'].includes(url.pathname)) {

@@ -39,7 +39,7 @@ const km = meters => meters == null ? '—' : numeric(meters / 1000, 1);
 const dayLabel = (day, options = { day: 'numeric', month: 'short' }) => new Intl.DateTimeFormat('en-GB', options).format(new Date(day + 'T12:00:00Z'));
 const shiftDay = (day, n) => { const d = new Date(day + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
 let data, bootstrap, range = 30, busy = false, lastError = '', activitySearch = '', activitySport = 'all';
-let memoryKey = '', activeSync = null;
+let memoryKey = '', activeSync = null, cloudWorkspace = null;
 const session = {
   get: name => { try { return sessionStorage.getItem(name); } catch { return null; } },
   set: (name, value) => { try { sessionStorage.setItem(name, value); return true; } catch { return false; } },
@@ -59,6 +59,11 @@ async function localFetch(path, options) {
   }
 }
 async function api(path) {
+  if (cloudWorkspace && path !== '/api/bootstrap') {
+    const url = new URL(path, location.origin), days = Number(url.searchParams.get('days') || range);
+    if (url.pathname === '/api/data' || url.pathname === '/api/export') return cloudWorkspace.data(days);
+    if (url.pathname === '/api/briefing') return cloudWorkspace.briefing(days);
+  }
   const response = await localFetch(path, { cache: 'no-store' });
   const value = await response.json();
   if (!response.ok) throw new Error(value.error || 'Could not load local data.');
@@ -76,6 +81,7 @@ function stat(label, value, unit, caption, mark) {
   return `<article class="flex min-w-0 flex-col gap-4 rounded-lg border border-gray-200 bg-white p-4 shadow-xs sm:p-5"><div class="flex items-center justify-between gap-2"><strong class="block text-xs font-medium text-gray-500">${label}</strong><span class="stat-icon">${icon(mark)}</span></div><p class="text-2xl font-medium tracking-tight whitespace-nowrap text-gray-900 tabular-nums xl:text-3xl">${value}${unit ? `<small class="ml-1 text-sm font-normal tracking-normal text-gray-400">${unit}</small>` : ''}</p><p class="text-[11px]/5 text-gray-500">${caption}</p></article>`;
 }
 function connectionBanner() {
+  if (cloudWorkspace && !cloudWorkspace.connected) return '';
   if (getKey()) return '';
   return `<section class="connect-banner"><div class="banner-mark">↗</div><div><h2>${data.sync ? 'Your history is here. Connect to bring it up to date.' : 'Good training starts with the whole picture.'}</h2><p>${data.sync ? 'Your session key is no longer available. Enter it again to sync the latest data.' : 'Connect Garmin to see your activities, sleep, and recovery together. Your key stays in this browser session.'}</p></div><button class="button" data-connect>Connect Garmin <span>↗</span></button></section>`;
 }
@@ -167,36 +173,73 @@ function plan() {
     + `<section class="card"><div class="card-heading"><div><h2>Your training calendar</h2><p class="sub">${dayLabel(monday)} – ${dayLabel(shiftDay(monday, 6))}</p></div><span class="pill orange">NO PLAN YET</span></div><div class="timeline">${Array.from({ length: 7 }, (_, i) => { const date = shiftDay(monday, i); return `<div class="calendar-day"><span>${dayLabel(date, { weekday: 'short' })}</span><b>${dayLabel(date, { day: 'numeric' })}</b><i></i></div>`; }).join('')}</div><div class="calendar-note"><strong>Good plans begin with a conversation.</strong>When you’re ready, we’ll discuss your goals, available time, and how bike, gym, and bouldering fit together.</div></section><div class="split-bottom"><section class="card panel"><h2>Get the foundation in place.</h2><p>Sync your recent training and recovery history first. That gives the conversation context, without guessing your goals or prescribing a schedule.</p><div class="export-actions"><button class="button button-secondary" data-connect>${getKey() ? 'Manage connection' : 'Connect Garmin'} ↗</button></div></section><section class="card panel"><h2>Your data, ready to discuss.</h2><p>Export a structured snapshot for ChatGPT, or use the local files directly with Codex. The coaching agent and personalized plan are the next step.</p><div class="export-actions"><button class="button button-secondary" data-copy ${!data.sync ? 'disabled' : ''}>Copy ChatGPT briefing ↗</button></div></section></div>`;
 }
 function connection() {
+  if (cloudWorkspace) return cloudConnection();
   const connected = !!getKey();
   return heading('CONNECTED, ON YOUR TERMS', 'A connection you control.', 'Your Garmin data stays on this Mac. Share a summary when you’re ready.', false) + warnings()
     + `<section class="card panel"><p class="eyebrow">GARMIN CONNECT PERSONAL API</p><h2>${connected ? 'Ready to keep your history up to date.' : 'Connect your Garmin account.'}</h2><p>Paste your personal API key once per tab session. Cadence exchanges it for an access token and downloads activity, sleep, HRV, and daily health summaries. Opening or refreshing this tab syncs the latest data while the key is available.</p><div class="setting-row"><div><strong>${connected ? 'Key available in this session' : 'No key in this session'}</strong><p>Key expiry and storage are separate: Garmin keys can last 30 days to a year; this app keeps yours in the tab’s session.</p></div><div class="export-actions"><button class="button button-secondary" data-connect>${connected ? 'Change key' : 'Connect Garmin'} ↗</button>${connected ? '<button class="button button-quiet" id="forget-key">Forget key</button>' : ''}</div></div><div class="setting-row"><div><strong>Downloaded history stays local</strong><p>History remains available after the session ends. Keys, access tokens, account details, and GPS routes are not saved here.</p></div><button class="button button-quiet" id="full-sync" ${busy ? 'disabled' : ''}>Re-fetch full history ↻</button></div><details><summary>Latest sync details</summary>${data.sync ? `<p>Completed ${escapeHtml(new Date(data.sync.completedAt).toLocaleString('en-GB'))}. Fetched ${escapeHtml(data.sync.fetchedFrom)} through ${escapeHtml(data.sync.fetchedTo)}. ${data.sync.fullySuccessful ? 'All requested datasets were downloaded.' : 'Some requests failed; see warnings above.'}</p><p>Successful source windows: ${data.sync.coverage.length}. A successful request can return no records if a metric was not measured.</p>` : '<p>No sync has completed yet.</p>'}</details></section>`
     + `<div class="setup-grid connection-options"><section class="card panel"><div class="step-number">01</div><h2>Use ChatGPT with an export.</h2><p>Copy a briefing into a conversation, or attach the downloaded JSON file. Both include daily measurements, activities, coverage, and missing-data notes for the selected period.</p><div class="export-range">${rangeControl()}</div><div class="export-actions"><button class="button button-secondary" data-copy ${!data.sync ? 'disabled' : ''}>Copy briefing ↗</button><a class="button button-secondary ${!data.sync ? 'is-disabled' : ''}" href="/api/export?days=${range}" ${!data.sync ? 'aria-disabled="true" tabindex="-1"' : ''}>Download JSON ↓</a></div><details><summary>What is shared?</summary><p>Only the exported data. Cadence does not send it to OpenAI automatically. Review the JSON before sharing if you want to inspect the exact fields.</p></details></section><section class="card panel"><div class="step-number">02</div><h2>Work with Codex locally.</h2><p>Codex can read the normalized history directly from this project. No MCP server or OpenAI API key is required for that workflow.</p><code class="code-box">${escapeHtml(bootstrap.dataFile)}</code><button class="text-button" id="copy-codex">Copy a prompt for Codex ↗</button><details><summary>Optional: direct ChatGPT desktop access</summary><p>A small, optional MCP adapter lets ChatGPT desktop and Codex query the saved history. It only runs when a client starts it, and does not hold your Garmin key.</p><p>In the desktop app’s MCP server settings, add a STDIO server with:</p><code class="code-box">Command: ${escapeHtml(bootstrap.nodePath)}\nArguments: ${escapeHtml(bootstrap.projectDir + 'src/mcp.mjs')}</code><p>Then save and restart the client. Available tools read sync status, activities, health trends, and training summaries. Coaching and plan creation remain for later.</p></details></section></div>`;
+}
+function folderBanner() {
+  if (!cloudWorkspace || cloudWorkspace.connected) return '';
+  return `<section class="connect-banner"><div class="banner-mark">↗</div><div><h2>${cloudWorkspace.supported ? 'Open your local training folder.' : 'Open Cadence in Chrome or Edge.'}</h2><p>${cloudWorkspace.supported ? 'Choose an existing Cadence data folder to resume, or an empty folder for your first sync. Each browser needs its own folder permission.' : 'This version saves directly to your filesystem and needs a browser with folder access.'}</p></div><button class="button" data-folder ${cloudWorkspace.supported ? '' : 'disabled'}>Choose data folder ↗</button></section>`;
+}
+async function chooseFolder() {
+  if (busy) return notify('Wait for the current sync to finish before changing folders.');
+  try {
+    await cloudWorkspace.choose(); await reload();
+    notify('Local folder opened. Saved history is ready.');
+    if (getKey()) await sync();
+  } catch (error) { if (error.name !== 'AbortError') notify(error.message, true); }
+}
+function cloudConnection() {
+  const folder = cloudWorkspace.name, connected = !!getKey();
+  return heading('YOUR FILES. YOUR TRAINING.', 'Open a folder. Pick up where you left off.', 'The app runs on Cloudflare. Your training history lives in files on your device.', false) + warnings()
+    + `<section class="card panel"><p class="eyebrow">LOCAL WORKSPACE</p><h2>${folder ? 'Connected to ' + escapeHtml(folder) : 'Choose your training data folder.'}</h2><p>Select the folder containing your existing snapshot.json, or choose an empty folder. You can open that same folder in another Chrome or Edge browser to resume your saved history. No Garmin key is needed to read saved data.</p><div class="setting-row"><div><strong>${folder ? escapeHtml(folder) + '/snapshot.json' : 'No local folder selected'}</strong><p>The browser asks for read/write permission. IndexedDB remembers only the folder handle; your training records stay in the file.</p></div><div class="export-actions"><button class="button button-secondary" data-folder ${busy || !cloudWorkspace.supported ? 'disabled' : ''}>${folder ? 'Change folder' : 'Choose data folder'} ↗</button>${folder ? '<button class="button button-quiet" id="forget-folder">Disconnect folder</button>' : ''}</div></div></section>`
+    + `<section class="card panel"><p class="eyebrow">GARMIN VIA CLOUDFLARE</p><h2>${connected ? 'Key available in this browser session.' : 'Connect Garmin when you want fresh data.'}</h2><p>The private Worker relays requests to Garmin. Your key and downloaded responses pass through Cloudflare temporarily. No training database or saved Garmin key is configured in the cloud.</p><div class="export-actions"><button class="button button-secondary" data-connect>${connected ? 'Change key' : 'Connect Garmin'} ↗</button>${connected ? '<button class="button button-quiet" id="forget-key">Forget key</button>' : ''}<button class="button button-quiet" id="full-sync" ${busy ? 'disabled' : ''}>Re-fetch full history ↻</button></div>${data.sync ? `<details><summary>Latest sync details</summary><p>Completed ${escapeHtml(new Date(data.sync.completedAt).toLocaleString('en-GB'))}. ${data.sync.fullySuccessful ? 'All requested datasets downloaded.' : 'See the sync warnings for unavailable data.'}</p></details>` : ''}</section>`
+    + `<div class="split-bottom"><section class="card panel"><h2>Discuss your data in ChatGPT.</h2><p>Copy a briefing or download an export from your local file. Nothing is sent to ChatGPT automatically.</p><div class="export-range">${rangeControl()}</div><div class="export-actions"><button class="button button-secondary" data-copy ${!data.sync ? 'disabled' : ''}>Copy briefing ↗</button><a class="button button-secondary ${!data.sync ? 'is-disabled' : ''}" href="/api/export?days=${range}" ${!data.sync ? 'aria-disabled="true" tabindex="-1"' : ''}>Download JSON ↓</a></div></section><section class="card panel"><h2>Work with Codex locally.</h2><p>Ask Codex to read snapshot.json in the folder you selected. Your browser does not expose the full filesystem path, so point Codex to that folder when you start the conversation.</p><div class="export-actions"><button class="button button-secondary" id="copy-codex">Copy a Codex prompt ↗</button></div></section></div>`;
 }
 function render() {
   if (!data) return;
   const current = route();
   $('#navigation').innerHTML = nav.map(([key, label]) => `<a class="nav-item rounded-lg px-4 py-3 text-sm font-medium transition-colors ${current === key ? 'active bg-orange-50 text-orange-700' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'}" href="#${key}" aria-label="${label}" ${current === key ? 'aria-current="page"' : ''}><span class="nav-icon">${icon(key)}</span><span>${label}</span></a>`).join('');
   $('#breadcrumb').textContent = nav.find(([key]) => key === current)[1].toUpperCase();
-  $('#page').innerHTML = ({ overview, activities, health, plan, connection }[current])();
+  $('#page').innerHTML = folderBanner() + ({ overview, activities, health, plan, connection }[current])();
   $('#sync-button').disabled = busy;
   $('#sync-button').lastChild.textContent = busy ? ' Syncing…' : ' Sync Garmin';
   $('#sync-label').textContent = data.sync ? `${data.sync.fullySuccessful ? 'Synced' : 'Partial sync'} ${new Date(data.sync.completedAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })} · ${dayLabel(data.sync.fetchedTo)}` : 'Not synced yet';
 }
-async function reload() { data = await api(`/api/data?days=${range}`); render(); }
-function showConnect() {
+async function reload() {
+  data = await api(`/api/data?days=${range}`);
+  if (cloudWorkspace) bootstrap.dataFile = cloudWorkspace.name ? cloudWorkspace.name + '/snapshot.json' : 'your selected Cadence folder/snapshot.json';
+  render();
+}
+async function showConnect() {
   if (busy) return notify('Wait for the current sync to finish before changing the key.');
+  if (cloudWorkspace && !cloudWorkspace.connected) return chooseFolder();
   $('#api-key').value = ''; $('#api-key').type = 'password'; $('#toggle-key').textContent = 'Show'; $('#toggle-key').setAttribute('aria-pressed', 'false');
   $('#connect-error').hidden = true;
   $('#sync-days').value = session.get('cadence.syncDays') || '90';
   $('#connect-dialog').showModal();
 }
 async function sync({ key = getKey(), full = false, days = Number(session.get('cadence.syncDays') || 90) } = {}) {
+  if (cloudWorkspace && !cloudWorkspace.connected) return chooseFolder();
   if (!key) return showConnect();
   if (busy) return;
   busy = true; activeSync = new AbortController(); lastError = ''; render(); $('#sync-panel').hidden = false;
   $('#sync-message').textContent = 'Connecting to Garmin…'; $('#sync-progress').value = 0;
   let completed = false;
   try {
+    if (cloudWorkspace) {
+      const result = await cloudWorkspace.sync(key, { days, full, signal: activeSync.signal,
+        onProgress: event => {
+          $('#sync-message').textContent = event.message;
+          $('#sync-progress').max = event.total || 1; $('#sync-progress').value = event.completed || 0;
+        } });
+      completed = true;
+      notify(result.sync.fullySuccessful ? 'Garmin data saved to your local folder.' : 'Available data saved. Check the sync warnings.');
+      await reload();
+      return;
+    }
     // The local server can restart while this tab remains open. Refresh its request token for every sync.
     bootstrap = await api('/api/bootstrap');
     const response = await localFetch('/api/sync', { method: 'POST', signal: activeSync.signal, headers: { 'Content-Type': 'application/json', 'X-Cadence-Token': bootstrap.csrf }, body: JSON.stringify({ key, days, full }) });
@@ -242,6 +285,18 @@ document.addEventListener('click', async event => {
   const button = event.target.closest('button, a'); if (!button) return;
   if (button.classList.contains('skip-link')) { event.preventDefault(); $('#content').focus(); return; }
   if (button.matches('[aria-disabled="true"]')) return event.preventDefault();
+  if (button.hasAttribute('data-folder')) return chooseFolder();
+  if (button.id === 'forget-folder') { await cloudWorkspace.forget(); await reload(); notify('Folder disconnected. Your files are unchanged.'); return; }
+  if (cloudWorkspace && button.matches('a[href^="/api/export"]')) {
+    event.preventDefault();
+    try {
+      const value = await cloudWorkspace.data(range);
+      const url = URL.createObjectURL(new Blob([JSON.stringify(value, null, 2)], { type: 'application/json' }));
+      const anchor = document.createElement('a'); anchor.href = url; anchor.download = 'cadence-training-data.json'; anchor.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (error) { notify(error.message, true); }
+    return;
+  }
   if (button.hasAttribute('data-connect')) showConnect();
   if (button.dataset.route) location.hash = button.dataset.route;
   if (button.dataset.close) $('#' + button.dataset.close).close();
@@ -276,8 +331,18 @@ $('#connect-dialog').addEventListener('close', () => { $('#api-key').value = '';
 $('#sync-button').addEventListener('click', () => sync());
 window.addEventListener('hashchange', render);
 try {
-  bootstrap = await api('/api/bootstrap'); await reload();
-  if (getKey()) await sync();
+  bootstrap = await api('/api/bootstrap');
+  if (bootstrap.mode === 'cloud') {
+    const { FolderWorkspace } = await import('./folder-workspace.mjs');
+    cloudWorkspace = new FolderWorkspace(); await cloudWorkspace.restore();
+    $('.local-status strong').textContent = 'Files on your device';
+    $('.local-status div span').textContent = 'Private Cloudflare connection';
+    $('.sidebar-note p').textContent = 'Your training history lives in a folder you choose. Open the same folder in another browser to continue.';
+    $('.footer span:first-child').textContent = 'Local files · Garmin via Cloudflare';
+    $('#connect-dialog .privacy-note p').textContent = 'Your key stays in this browser session. Cloudflare temporarily processes the key and Garmin responses during syncing. Training history is saved only to your selected local folder.';
+  }
+  await reload();
+  if (getKey() && (!cloudWorkspace || cloudWorkspace.connected)) await sync();
 } catch (error) {
-  $('#page').innerHTML = `<div class="warning error-banner"><strong>Could not load your local dashboard.</strong><p>${escapeHtml(error.message)}</p><p>Check that Cadence is running, then refresh the page.</p></div>`;
+  $('#page').innerHTML = `<div class="warning error-banner"><strong>Could not load Cadence.</strong><p>${escapeHtml(error.message)}</p><p>Check your connection and sign-in, then refresh the page.</p></div>`;
 }

@@ -4,3 +4,7 @@ data/
 .DS_Store
 coverage/
 *.log
+dist/
+.wrangler/
+.dev.vars
+.dev.vars.*
