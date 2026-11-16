@@ -1,0 +1,52 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { request } from 'node:http';
+import { createApp } from '../src/server.mjs';
+import { mockGarmin } from './fixtures.mjs';
+
+test('local API protects origins, validates requests, persists normalized history, and exports no secrets', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'cadence-http-test-'));
+  const app = createApp({ directory, ...mockGarmin() });
+  await new Promise((resolve, reject) => { app.once('error', reject); app.listen(0, '127.0.0.1', resolve); });
+  t.after(async () => { await new Promise(resolve => app.close(resolve)); await rm(directory, { recursive: true, force: true }); });
+  const base = `http://127.0.0.1:${app.address().port}`;
+  const get = (path, options) => fetch(base + path, options);
+  assert.equal((await get('/')).status, 200);
+  const bootResponse = await get('/api/bootstrap');
+  assert.equal(bootResponse.headers.get('cache-control'), 'no-store');
+  const boot = await bootResponse.json();
+  assert.equal((await get('/api/data', { headers: { Origin: 'https://foreign.example' } })).status, 403);
+  const foreignHostStatus = await new Promise((resolve, reject) => {
+    const requestHandle = request(base + '/api/data', { headers: { Host: 'foreign.example' } }, response => {
+      response.resume(); resolve(response.statusCode);
+    });
+    requestHandle.on('error', reject); requestHandle.end();
+  });
+  assert.equal(foreignHostStatus, 403);
+  assert.equal((await get('/api/data', { headers: { 'sec-fetch-site': 'cross-site' } })).status, 403);
+  assert.equal((await get('/api/data?days=-4')).status, 400);
+  const headers = { 'Content-Type': 'application/json', 'X-Cadence-Token': boot.csrf };
+  assert.equal((await get('/api/sync', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).status, 403);
+  assert.equal((await get('/api/sync', { method: 'POST', headers: { ...headers, 'X-Cadence-Token': 'x'.repeat(64) }, body: '{}' })).status, 403);
+  assert.equal((await get('/api/sync', { method: 'POST', headers, body: '{invalid' })).status, 400);
+  assert.equal((await get('/api/sync', { method: 'POST', headers, body: JSON.stringify({ key: 'test-personal-key', days: 900 }) })).status, 400);
+  const synced = await get('/api/sync', { method: 'POST', headers, body: JSON.stringify({ key: 'test-personal-key', days: 90 }) });
+  const concurrent = await get('/api/sync', { method: 'POST', headers, body: JSON.stringify({ key: 'test-personal-key', days: 90 }) });
+  assert.equal(concurrent.status, 409);
+  const events = (await synced.text()).trim().split('\n').map(line => JSON.parse(line));
+  assert.equal(events.at(-1).type, 'done');
+  assert.ok(events.some(e => e.type === 'progress'));
+  const saved = await readFile(join(directory, 'snapshot.json'), 'utf8');
+  assert.doesNotMatch(saved, /test-personal-key|test-access-token|startLatitude|userProfileId/);
+  assert.equal((await stat(join(directory, 'snapshot.json'))).mode & 0o777, 0o600);
+  const exported = await get('/api/export?days=90');
+  assert.match(exported.headers.get('content-disposition'), /attachment/);
+  assert.doesNotMatch(await exported.text(), /test-personal-key|test-access-token/);
+  const briefing = await (await get('/api/briefing')).json();
+  assert.match(briefing.text, /Ask about my goals/);
+  assert.equal((await get('/src/server.mjs')).status, 404);
+  assert.equal((await get('/data/snapshot.json')).status, 404);
+});

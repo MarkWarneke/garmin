@@ -1,0 +1,226 @@
+/* HyperUI application components, adapted for Cadence. See THIRD_PARTY_NOTICES.md. */
+@import "tailwindcss" source(none);
+@source "../public/index.html";
+@source "../public/app.js";
+
+@theme {
+  --font-sans: "Avenir Next", Avenir, ui-sans-serif, system-ui, sans-serif;
+}
+
+@layer base {
+  html { color-scheme: light; @apply bg-gray-50 text-gray-900 antialiased; }
+  body { @apply m-0; }
+  button, a, input, select { touch-action: manipulation; }
+  button, a, summary, select { @apply cursor-pointer; }
+  button:disabled { @apply cursor-not-allowed opacity-50; }
+  :focus-visible { @apply outline-2 outline-offset-4 outline-orange-500; }
+  h1 { @apply text-3xl font-semibold tracking-tight sm:text-4xl; }
+  dialog { @apply m-auto w-[30rem] max-w-[calc(100vw-2rem)] rounded-xl border border-gray-200 bg-white p-6 text-gray-900 shadow-xl sm:p-8; }
+  dialog::backdrop { @apply bg-gray-900/50 backdrop-blur-sm; }
+  dialog h2 { @apply mb-3 text-2xl font-semibold tracking-tight; }
+  dialog form { @apply mt-6; }
+  dialog label { @apply mt-5 mb-2 block text-sm font-medium text-gray-700; }
+  dialog input, dialog select { @apply w-full rounded-lg border border-gray-300 bg-white px-3 py-3 text-sm shadow-xs focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500; }
+  [hidden] { display: none !important; }
+}
+
+@layer components {
+  /* HyperUI side menu and navigation patterns. */
+  .app-shell { @apply min-h-screen pb-20 md:grid md:grid-cols-[5rem_minmax(0,1fr)] md:pb-0 xl:grid-cols-[15rem_minmax(0,1fr)]; }
+  .sidebar { @apply fixed inset-x-0 bottom-0 z-20 border-t border-gray-200 bg-white p-3 md:sticky md:top-0 md:flex md:h-screen md:flex-col md:border-t-0 md:border-r md:px-3 md:py-8 xl:px-5; }
+  .brand { @apply hidden items-center justify-center gap-2.5 text-3xl font-bold tracking-tighter no-underline md:flex xl:justify-start xl:px-2; }
+  .brand > span { @apply hidden xl:block; }
+  .brand img { @apply size-9; }
+  .brand-dot { @apply text-orange-600; }
+  .workspace-label { @apply mt-10 mb-4 hidden px-3 text-[10px] font-semibold tracking-widest text-gray-400 xl:block; }
+  #navigation { @apply flex items-center justify-around gap-1 md:mt-9 md:flex-col md:items-stretch md:gap-2 xl:mt-0; }
+  .nav-item { @apply flex items-center justify-center gap-3 rounded-lg px-4 py-3 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900 xl:justify-start; }
+  .nav-item.active { @apply bg-orange-50 text-orange-700; }
+  .nav-icon { @apply flex size-5 shrink-0; }
+  .nav-icon svg { @apply size-5; }
+  .nav-item > span:not(.nav-icon) { @apply hidden xl:block; }
+  .sidebar-note { @apply mt-auto mb-7 hidden px-3 pt-16 xl:block; }
+  .small-mark { @apply mb-4 block text-3xl text-orange-600; }
+  .sidebar-note h3 { @apply mb-2 text-sm font-semibold text-gray-800; }
+  .sidebar-note p { @apply text-xs/6 text-gray-500; }
+  .local-status { @apply mt-auto hidden items-center justify-center gap-2.5 border-t border-gray-200 pt-5 md:flex xl:mt-0 xl:justify-start xl:px-3; }
+  .local-status div { @apply hidden xl:block; }
+  .local-status strong { @apply block text-xs font-medium text-gray-800; }
+  .local-status div span { @apply mt-1 block text-[11px] text-gray-500; }
+  .status-dot { @apply inline-block size-1.5 shrink-0 rounded-full bg-emerald-500; }
+  main { @apply min-w-0; }
+  .topbar { @apply flex min-h-20 items-center justify-between gap-4 border-b border-gray-200 bg-white px-5 py-4 sm:px-8 lg:px-10; }
+  .breadcrumb { @apply text-[10px] font-medium tracking-wider text-gray-400 sm:text-xs; }
+  .breadcrumb span { @apply mx-2 text-gray-300 sm:mx-3; }
+  .breadcrumb b { @apply font-medium text-gray-600; }
+  .topbar-right { @apply flex shrink-0 items-center gap-5; }
+  .sync-label { @apply hidden text-xs text-gray-500 lg:block; }
+  .page-body { @apply mx-auto max-w-[94rem] px-5 pt-7 pb-6 sm:px-8 sm:pt-9 lg:px-10; }
+  .page-heading { @apply mb-7 flex flex-col items-start justify-between gap-5 lg:flex-row lg:items-end; }
+  .eyebrow { @apply mb-3 text-[10px] font-semibold tracking-[.17em] text-orange-700; }
+  .page-subtitle { @apply mt-3 text-sm/7 text-gray-500; }
+  .range-select { @apply inline-flex shrink-0 items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-500 shadow-xs; }
+  .range-select svg { @apply size-4; }
+  .range-select select { @apply cursor-pointer border-0 bg-transparent py-2.5 pr-1 pl-0.5 text-xs text-gray-700 outline-none; }
+
+  /* HyperUI buttons, badges, inputs, alerts, and modal patterns. */
+  .button { @apply inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-xs font-medium whitespace-nowrap transition-colors; }
+  .button-primary { @apply border border-orange-700 bg-orange-700 text-white shadow-xs hover:border-orange-800 hover:bg-orange-800; }
+  .button-secondary { @apply border border-gray-200 bg-white text-gray-700 shadow-xs hover:bg-gray-50; }
+  .button-quiet { @apply border border-gray-200 bg-white text-gray-600 hover:bg-gray-50; }
+  .button-danger { @apply border border-red-200 bg-red-50 text-red-700 hover:bg-red-100; }
+  .button-wide { @apply mt-3 w-full justify-between py-3; }
+  .button-primary #sync-icon { @apply text-xl leading-none; }
+  .text-button { @apply inline-flex items-center gap-2 bg-transparent p-0 text-xs font-medium text-orange-700 hover:text-orange-900; }
+  .pill { @apply inline-flex items-center rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 text-[9px] font-medium tracking-wide whitespace-nowrap text-gray-500; }
+  .pill.orange { @apply border-orange-200 bg-orange-50 text-orange-700; }
+  .warning { @apply mb-6 rounded-lg border border-amber-200 bg-amber-50 px-5 py-4 text-xs/6 text-amber-800; }
+  .warning summary { @apply font-semibold; }
+  .warning ul { @apply mt-2 list-disc pl-5; }
+  .error-banner { @apply border-red-200 bg-red-50 text-red-700; }
+  .muted { @apply text-sm/7 text-gray-500; }
+  .dialog-close { @apply absolute top-3 right-4 rounded-lg px-2 py-1 text-2xl text-gray-400 hover:bg-gray-100 hover:text-gray-600; }
+  .dialog-icon { @apply mb-6 hidden size-12 place-items-center rounded-lg bg-orange-50 text-3xl text-orange-600 sm:grid; }
+  dialog .muted { @apply text-xs/6 sm:text-sm/7; }
+  .key-field { @apply relative; }
+  .key-field input { @apply pr-16; }
+  .key-field button { @apply absolute top-4 right-3 text-xs; }
+  .privacy-note { @apply mt-5 mb-4 flex gap-3 rounded-lg border border-emerald-100 bg-emerald-50 p-3; }
+  .privacy-note > span { @apply text-xl text-emerald-600; }
+  .privacy-note p { @apply text-[11px]/5 text-emerald-800 sm:text-xs/6; }
+  .form-error { @apply my-3 text-xs/6 text-red-600; }
+  .help-link { @apply mt-5 block text-center text-xs text-gray-500 underline underline-offset-4 hover:text-gray-800; }
+
+  /* Cards use HyperUI's application stats layout. */
+  .stat-grid { @apply mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-5; }
+  .stat-card { @apply flex min-w-0 flex-col gap-4 rounded-lg border border-gray-200 bg-white p-4 shadow-xs sm:p-5; }
+  .stat-top { @apply flex items-center justify-between gap-2; }
+  .stat-label { @apply text-xs font-medium text-gray-500; }
+  .stat-icon { @apply flex shrink-0 text-gray-400; }
+  .stat-icon svg { @apply size-4; }
+  .stat-value { @apply text-2xl font-medium tracking-tight whitespace-nowrap text-gray-900 tabular-nums xl:text-3xl; }
+  .stat-value small { @apply ml-1 text-sm font-normal tracking-normal text-gray-400; }
+  .stat-caption { @apply text-[11px]/5 text-gray-500; }
+  .content-grid { @apply mb-6 grid gap-6 lg:grid-cols-[1.5fr_1fr]; }
+  .card { @apply overflow-hidden rounded-lg border border-gray-200 bg-white shadow-xs; }
+  .card-heading { @apply flex items-center justify-between gap-3 px-5 pt-5 sm:px-6 sm:pt-6; }
+  .card-heading h2 { @apply text-sm font-semibold text-gray-900; }
+  .card-heading .sub { @apply mt-1 text-[11px]/5 text-gray-500; }
+  .link-button { @apply inline-flex items-center gap-2 text-xs font-medium whitespace-nowrap text-gray-500 hover:text-orange-700; }
+  .card-inner { @apply p-5 sm:p-6; }
+  .connect-banner { @apply mb-6 grid grid-cols-[2.5rem_1fr] items-center gap-4 rounded-lg border border-orange-200 bg-orange-50 p-5 lg:grid-cols-[2.5rem_1fr_auto]; }
+  .banner-mark { @apply grid size-10 place-items-center rounded-lg border border-orange-200 bg-white text-2xl text-orange-600; }
+  .connect-banner h2 { @apply text-sm font-semibold text-orange-950; }
+  .connect-banner p { @apply mt-1 max-w-xl text-xs/6 text-orange-800; }
+  .connect-banner .button { @apply col-start-2 justify-self-start border border-orange-200 bg-white text-orange-700 hover:bg-orange-100 lg:col-start-3; }
+
+  /* HyperUI's divided table structure, with an accessible scroll container. */
+  .table-container { @apply overflow-x-auto px-5 pt-4 pb-1 sm:px-6; }
+  table { @apply min-w-full divide-y-2 divide-gray-200 text-left text-xs whitespace-nowrap; }
+  th { @apply px-3 py-3 text-[10px] font-medium tracking-wide whitespace-nowrap text-gray-500 uppercase; }
+  td { @apply px-3 py-4 text-gray-700; }
+  th:first-child, td:first-child { @apply pl-0; }
+  th:last-child, td:last-child { @apply pr-0; }
+  tbody { @apply divide-y divide-gray-100; }
+  .activity-name { @apply flex min-w-44 max-w-80 items-center gap-3 whitespace-normal; }
+  .activity-name b { @apply block text-xs font-medium text-gray-800; }
+  .activity-name span { @apply mt-1 block text-[10px] text-gray-500; }
+  .activity-icon { @apply flex size-9 shrink-0 items-center justify-center rounded-lg bg-amber-50 text-amber-700; }
+  .activity-icon svg { @apply size-5; }
+  .activity-icon.cycling { @apply bg-orange-50 text-orange-600; }
+  .activity-icon.gym { @apply bg-lime-50 text-lime-700; }
+  .activity-icon.other { @apply bg-emerald-50 text-emerald-600; }
+  .activity-icon.running { @apply bg-sky-50 text-sky-600; }
+  .activity-link { @apply bg-transparent p-0 text-left; }
+  .arrow-link { @apply rounded-md px-2 py-1 text-lg text-gray-400 hover:bg-gray-100 hover:text-gray-700; }
+  .table-empty { @apply px-3 py-12 text-center; }
+  .table-empty strong { @apply mb-2 block text-sm font-medium text-gray-700; }
+  .table-empty p { @apply text-xs/6 text-gray-500; }
+  .section-toolbar { @apply mb-5 flex flex-wrap items-center gap-3; }
+  .section-toolbar input, .section-toolbar select { @apply min-w-0 rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-xs text-gray-700 shadow-xs; }
+  .section-toolbar input { @apply max-w-sm flex-1; }
+
+  .recovery-list { @apply px-5 pt-2 pb-5 sm:px-6 lg:pb-6; }
+  .recovery-row { @apply flex items-center gap-3 border-b border-gray-100 py-4 last:border-b-0; }
+  .metric-mark { @apply flex size-9 shrink-0 items-center justify-center rounded-lg bg-lime-50 text-lime-700; }
+  .metric-mark svg { @apply size-4; }
+  .metric-mark.sleep { @apply bg-indigo-50 text-indigo-400; }
+  .metric-mark.heart { @apply bg-orange-50 text-orange-400; }
+  .recovery-name { @apply min-w-0 text-xs text-gray-700; }
+  .recovery-name span { @apply mt-1 block text-[10px] text-gray-400; }
+  .recovery-value { @apply ml-auto text-lg font-medium whitespace-nowrap tabular-nums; }
+  .recovery-value small { @apply ml-1 text-[10px] font-normal text-gray-400; }
+  .recovery-spark { @apply ml-1 hidden h-6 w-16 shrink-0 2xl:block; }
+  .recovery-spark svg { @apply h-full w-full overflow-visible; }
+  .health-grid { @apply grid gap-6 lg:grid-cols-2; }
+  .health-metric-top { @apply my-5 flex items-center justify-between gap-4; }
+  .health-value { @apply text-3xl font-medium tracking-tight; }
+  .health-value small { @apply text-sm font-normal tracking-normal text-gray-400; }
+  .health-caption { @apply mt-2 text-[10px]/5 text-gray-500; }
+  .line-legend { @apply mt-3 flex justify-between text-[10px] text-gray-400; }
+  .health-empty { @apply flex h-32 items-center justify-center border-b border-gray-200 text-xs text-gray-400; }
+  .split-bottom { @apply mt-6 grid gap-6 lg:grid-cols-2; }
+  .next-card { @apply border-emerald-100 bg-emerald-50/70; }
+  .next-card .eyebrow { @apply text-emerald-700; }
+  .next-card h3 { @apply text-lg font-medium tracking-tight text-emerald-950; }
+  .next-card p:not(.eyebrow) { @apply mt-3 max-w-sm text-xs/6 text-emerald-800; }
+  .next-card .text-button { @apply mt-4 text-emerald-700 hover:text-emerald-900; }
+  .export-card h3 { @apply text-sm font-semibold; }
+  .export-card p { @apply mt-2 text-xs/6 text-gray-500; }
+  .export-actions { @apply mt-4 flex flex-wrap items-center gap-3; }
+  .panel { @apply p-5 sm:p-6; }
+  .panel h2 { @apply mb-3 text-base font-semibold tracking-tight; }
+  .panel p { @apply text-xs/6 text-gray-500; }
+  .panel + .panel { @apply mt-6; }
+  .setting-row { @apply mt-5 flex flex-wrap items-center justify-between gap-4 border-t border-gray-200 pt-5; }
+  .setting-row strong { @apply text-xs font-medium text-gray-800; }
+  .setting-row p { @apply mt-1 max-w-2xl text-[11px]/6; }
+  .setting-row .export-actions { @apply mt-0; }
+  .code-box { @apply my-4 block overflow-auto rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 font-mono text-[11px]/6 whitespace-pre-wrap text-gray-600; overflow-wrap: anywhere; }
+  .setup-grid { @apply grid gap-6 xl:grid-cols-2; }
+  .setup-grid .panel + .panel, .split-bottom .panel + .panel { @apply mt-0; }
+  .connection-options { @apply mt-6; }
+  .step-number { @apply mb-5 grid size-8 place-items-center rounded-lg bg-gray-100 text-xs font-medium text-gray-600; }
+  .export-range { @apply mt-5 block; }
+  .panel details { @apply mt-5 text-xs/7 text-gray-600; }
+  .panel details summary { @apply font-medium; }
+  .panel details p { @apply mt-2; }
+  .panel a:not(.button) { @apply text-orange-700 underline underline-offset-4; }
+  .is-disabled { @apply pointer-events-none opacity-50; }
+  .timeline { @apply mt-6 grid min-h-48 grid-cols-7 overflow-x-auto border-t border-gray-200; }
+  .calendar-day { @apply min-w-10 border-r border-gray-200 px-2 py-4 last:border-r-0 sm:px-4; }
+  .calendar-day span { @apply block text-[10px] text-gray-500; }
+  .calendar-day b { @apply mt-2 block text-lg font-medium; }
+  .calendar-day i { @apply mt-9 block h-1 w-4 rounded-full bg-gray-200; }
+  .calendar-note { @apply border-t border-gray-200 px-5 py-7 text-center text-xs/7 text-gray-500; }
+  .calendar-note strong { @apply mb-2 block text-base font-medium text-gray-800; }
+  .detail-grid { @apply mt-6 grid grid-cols-2 gap-3; }
+  .detail-cell { @apply rounded-lg border border-gray-100 bg-gray-50 p-4; }
+  .detail-cell dt { @apply text-xs text-gray-500; }
+  .detail-cell dd { @apply mt-2 text-xl font-medium; }
+  .detail-cell dd small { @apply text-xs font-normal text-gray-500; }
+  .attribution { @apply mt-6 text-[10px]/6 text-gray-400; }
+  .footer { @apply mt-8 flex flex-col justify-between gap-3 border-t border-gray-200 pt-5 text-[10px] text-gray-400 sm:flex-row; }
+  .footer > span:first-child { @apply flex items-center gap-2; }
+  .skip-link { @apply sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-50 focus:rounded-lg focus:bg-white focus:p-4 focus:shadow-lg; }
+  .sync-panel { @apply fixed right-4 bottom-24 left-4 z-30 flex gap-4 rounded-lg border border-gray-200 bg-white p-5 shadow-lg sm:right-6 sm:bottom-6 sm:left-auto sm:max-w-md; }
+  .sync-panel strong { @apply text-sm font-medium; }
+  .sync-panel p { @apply mt-1 text-xs/6 text-gray-500; }
+  .sync-panel progress { @apply mt-3 h-1 w-full accent-orange-600; }
+  .spinner { @apply mt-1 size-5 shrink-0 animate-spin rounded-full border-2 border-gray-200 border-t-orange-600 motion-reduce:animate-none; }
+  .toast { @apply fixed bottom-24 left-1/2 z-40 max-w-[90vw] -translate-x-1/2 rounded-lg border border-gray-800 bg-gray-900 px-5 py-3 text-xs text-white shadow-lg sm:bottom-7; }
+  .toast.error { @apply border-red-800 bg-red-800; }
+}
+
+/* Data drawing is purpose-built SVG; HyperUI supplies the surrounding UI. */
+.weekly-chart-wrap { position: relative; margin-top: 10px; }
+.weekly-svg { display: block; width: 100%; height: 215px; }
+.chart-empty { position: absolute; inset: 25px 15px 45px 50px; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 8px; background: white; text-align: center; color: var(--color-gray-500); }
+.chart-empty strong { font-size: 13px; font-weight: 500; }
+.chart-empty span { font-size: 11px; }
+.legend { display: flex; flex-wrap: wrap; align-items: center; gap: 18px; margin-top: 15px; font-size: 10px; color: var(--color-gray-500); }
+.legend i { display: inline-block; width: 6px; height: 6px; margin-right: 5px; border-radius: 2px; }
+.legend-cycling { background: #db875c; }.legend-gym { background: #9fae83; }.legend-running { background: #86a5b4; }.legend-other { background: #72a392; }
+.line-chart { position: relative; height: 132px; }
+.line-chart svg { width: 100%; height: 100%; overflow: visible; }
+@media(prefers-reduced-motion:reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }

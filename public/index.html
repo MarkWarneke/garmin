@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="Your personal, local Garmin training and recovery dashboard.">
+  <title>Cadence · Your training, in perspective</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="/styles.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#content">Skip to content</a>
+  <div class="app-shell">
+    <aside class="sidebar flex-col justify-between border-gray-200 bg-white md:flex">
+      <a class="brand" href="#overview"><img src="/favicon.svg" alt="" width="35" height="35"><span>cadence<span class="brand-dot">.</span></span></a>
+      <div class="workspace-label">YOUR PERSONAL TRAINING SPACE</div>
+      <nav aria-label="Main navigation" id="navigation"></nav>
+      <div class="sidebar-note"><span class="small-mark">↗</span><h3>A little more perspective.</h3><p>Connect the dots between how you move and how you recover.</p></div>
+      <div class="local-status"><span class="status-dot"></span><div><strong>Local on your Mac</strong><span>Personal data. Your space.</span></div></div>
+    </aside>
+    <main id="content" tabindex="-1">
+      <header class="topbar"><span class="breadcrumb">YOUR TRAINING <span>/</span> <b id="breadcrumb">OVERVIEW</b></span><div class="topbar-right"><span id="sync-label" class="sync-label">Not synced yet</span><button id="sync-button" class="button button-primary"><span id="sync-icon">↻</span> Sync Garmin</button></div></header>
+      <div class="page-body"><div id="page"></div><footer class="footer"><span><span class="status-dot"></span> Stored locally · Garmin Connect Personal API</span><span>Today’s data may still be incomplete.</span></footer></div>
+    </main>
+  </div>
+  <div class="sync-panel" id="sync-panel" hidden role="status" aria-live="polite"><span class="spinner"></span><div><strong>Syncing your Garmin data</strong><p id="sync-message">Connecting…</p><progress id="sync-progress" max="1" value="0" aria-label="Sync progress"></progress></div></div>
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+  <!-- HyperUI modal and form patterns adapted to native dialog for focus handling. -->
+  <dialog id="connect-dialog" aria-labelledby="connect-title"><button class="dialog-close" data-close="connect-dialog" aria-label="Close">×</button><div class="dialog-icon">↗</div><p class="eyebrow">YOUR GARMIN CONNECTION</p><h2 id="connect-title">Bring your training together.</h2><p class="muted">Use your Garmin Personal API key to download activities and health trends directly from Garmin.</p><form id="connect-form"><label for="api-key">Personal API key</label><div class="key-field"><input type="password" id="api-key" name="garmin-key" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Paste your personal API key" required minlength="8"><button type="button" id="toggle-key" class="text-button" aria-pressed="false">Show</button></div><label for="sync-days">History to download</label><select id="sync-days"><option value="30">Last 30 days</option><option value="90" selected>Last 90 days</option><option value="180">Last 180 days</option><option value="365">Last year</option></select><div class="privacy-note"><span>⌁</span><p>The key stays in this tab’s browser session. Downloaded stats stay on this Mac. No passwords, keys, or GPS routes are included in ChatGPT exports.</p></div><p id="connect-error" class="form-error" role="alert" hidden></p><button type="submit" class="button button-primary button-wide">Connect & sync <span>↗</span></button></form><a class="help-link" href="https://connect.garmin.com/app/settings/personalApiToken" target="_blank" rel="noreferrer">Find your Garmin Personal API key ↗</a></dialog>
+  <dialog id="activity-dialog" aria-labelledby="activity-title"><button class="dialog-close" data-close="activity-dialog" aria-label="Close">×</button><div id="activity-detail"></div></dialog>
+</body>
+</html>
