@@ -19,8 +19,9 @@ Cadence runs in one of two modes. Both use the same UI and save the same files.
 The data flow is the same in both modes:
 
 1. **Your key stays in your browser.** The Garmin Personal API key is saved in the browser's `localStorage` for this site, so you enter it once. It is never written to a file or sent anywhere except Garmin. **Forget key** removes it. Anyone with access to your browser profile can use it, so forget it on shared computers.
-2. **Cadence talks to Garmin.** The key is exchanged for a short-lived access token, then activities, daily summaries, sleep, and HRV are downloaded. In hosted mode, each request passes through the Worker because Garmin does not accept requests from web pages directly. The Worker forwards a fixed allowlist of Garmin operations, stores nothing, and has no database or request logging.
-3. **Only normalized summaries are saved** to `snapshot.json`. No GPS routes, FIT files, account details, or credentials.
+2. **Cadence talks to Garmin.** The key is exchanged for a short-lived access token, then activities, activity details, daily summaries, sleep, HRV, and training settings are downloaded. In hosted mode, each request passes through the Worker because Garmin does not accept requests from web pages directly. The Worker forwards a fixed allowlist of Garmin operations, stores nothing, and has no database or request logging.
+   It relays Garmin's **complete** responses; the browser filters them before saving. Besides training data, these responses can contain the start and end coordinates of outdoor activities (and of each interval type), the place name, the activity description, your Garmin display name and profile ID, sensor serial numbers, and weight details such as BMI and body fat. They never contain full GPS tracks. Cloudflare processes them in memory during the sync. Run Cadence locally if no third party should see them.
+3. **Only normalized summaries are saved** to `snapshot.json`. No coordinates, place names, GPS routes, FIT files, account details, names, IDs, or credentials.
 4. **Your athlete profile** (goal, FTP, availability, restrictions) is saved separately in `profile.json`, next to `snapshot.json`. A sync never touches it.
 5. **You decide what an assistant sees.** The Training plan dialog builds a prompt you can read and edit before copying it.
 
