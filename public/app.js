@@ -258,11 +258,33 @@ function plan() {
   return heading('A PLAN THAT FITS YOUR LIFE', 'Your next block starts here.', 'Tell ChatGPT or Claude what your data can’t, and get a plan built around your goals.', false)
     + `<section class="card"><div class="card-heading"><div><h2>Your training calendar</h2><p class="sub">${dayLabel(monday)} – ${dayLabel(shiftDay(monday, 6))}</p></div><span class="pill orange">NO PLAN YET</span></div><div class="timeline">${Array.from({ length: 7 }, (_, i) => { const date = shiftDay(monday, i); return `<div class="calendar-day"><span>${dayLabel(date, { weekday: 'short' })}</span><b>${dayLabel(date, { day: 'numeric' })}</b><i></i></div>`; }).join('')}</div><div class="calendar-note"><strong>Good plans begin with a conversation.</strong>Create a plan prompt below and talk it through with ChatGPT or Claude: your goals, available time, and how bike, gym, and bouldering fit together.</div></section>` + planCards();
 }
+// Setup is ready when data can be saved (folder or local server), a Garmin key is saved, and the last sync succeeded.
+function setupState() {
+  const checks = [
+    cloudWorkspace
+      ? { label: 'Data folder', ok: !!cloudWorkspace.connected, detail: cloudWorkspace.connected ? cloudWorkspace.name : cloudWorkspace.supported ? 'No folder selected' : 'Not supported in this browser' }
+      : { label: 'Local storage', ok: true, detail: 'Saved on this computer' },
+    { label: 'Garmin key', ok: !!getKey(), detail: getKey() ? 'Saved in this browser' : 'No key saved' },
+    { label: 'Last sync', ok: !!data.sync?.fullySuccessful && !lastError,
+      detail: lastError ? 'Last sync failed' : !data.sync ? 'Not synced yet'
+        : `${data.sync.fullySuccessful ? 'Complete' : 'Partial'} · ${new Date(data.sync.completedAt).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })}` },
+  ];
+  const level = checks.every(c => c.ok) ? 'ready' : !checks[0].ok || checks.every((c, i) => i === 0 || !c.ok) ? 'off' : 'attention';
+  const summary = { ready: 'All set', attention: 'Needs attention', off: 'Not set up' }[level];
+  const hint = checks.find(c => !c.ok);
+  return { checks, level, summary, hint: hint ? `${hint.label}: ${hint.detail}` : 'Folder, Garmin key, and sync are working' };
+}
+function setupStatus() {
+  const { checks, level, summary } = setupState();
+  const message = { ready: 'Everything is set up correctly. Cadence can save your history and sync Garmin.', attention: 'Almost there. Fix the item marked below to finish setup.', off: 'Finish the steps below to start saving and syncing your Garmin history.' }[level];
+  return `<section class="card panel setup-status" aria-live="polite"><div class="setup-head"><span class="setup-badge ${level}"><span class="pulse"><i></i><b></b></span>${summary.toUpperCase()}</span><p>${message}</p></div><ul class="setup-checks">${checks.map(c => `<li class="${c.ok ? 'ok' : 'missing'}"><span aria-hidden="true">${c.ok ? '✓' : '!'}</span><div><strong>${c.label}</strong><p>${escapeHtml(c.detail)}</p></div><span class="sr-only">${c.ok ? 'ready' : 'needs attention'}</span></li>`).join('')}</ul></section>`;
+}
+const pathField = (value, label) => `<input type="text" class="path-field" readonly value="${escapeHtml(value)}" aria-label="${escapeHtml(label)}" spellcheck="false">`;
 function connection() {
   if (cloudWorkspace) return cloudConnection();
   const connected = !!getKey();
-  return heading('CONNECTED, ON YOUR TERMS', 'A connection you control.', 'Your Garmin key, sync, and saved data, all in one place.', false) + warnings()
-    + `<section class="card panel"><p class="eyebrow">GARMIN CONNECT PERSONAL API</p><h2>${connected ? 'Ready to keep your history up to date.' : 'Connect your Garmin account.'}</h2><p>Paste your personal API key once. This browser remembers it until you choose Forget key. Cadence exchanges it for an access token and downloads activity, sleep, HRV, and daily health summaries. Opening the app syncs the latest data.</p><div class="setting-row"><div><strong>${connected ? 'Key saved in this browser' : 'No key saved in this browser'}</strong><p>Key expiry and storage are separate: Garmin keys can last 30 days to a year; this app keeps yours in this browser’s local storage until you forget it.</p></div><div class="export-actions"><button class="button button-secondary" data-connect>${connected ? 'Change key' : 'Connect Garmin'} ↗</button>${connected ? '<button class="button button-quiet" id="forget-key">Forget key</button>' : ''}</div></div><div class="setting-row"><div><strong>Downloaded history stays local</strong><p>History stays on this computer. Keys, access tokens, account details, and GPS routes are not saved here.</p></div><button class="button button-quiet" id="full-sync" ${busy ? 'disabled' : ''}>Re-fetch full history ↻</button></div><details><summary>Latest sync details</summary>${data.sync ? `<p>Completed ${escapeHtml(new Date(data.sync.completedAt).toLocaleString('en-GB'))}. Fetched ${escapeHtml(data.sync.fetchedFrom)} through ${escapeHtml(data.sync.fetchedTo)}. ${data.sync.fullySuccessful ? 'All requested datasets were downloaded.' : 'Some requests failed; see warnings above.'}</p><p>Successful source windows: ${data.sync.coverage.length}. A successful request can return no records if a metric was not measured.</p>` : '<p>No sync has completed yet.</p>'}</details></section>`
+  return heading('CONNECTED, ON YOUR TERMS', 'A connection you control.', 'Your Garmin key, sync, and saved data, all in one place.', false) + warnings() + setupStatus()
+    + `<section class="card panel"><p class="eyebrow">GARMIN CONNECT PERSONAL API</p><h2>${connected ? 'Ready to keep your history up to date.' : 'Connect your Garmin account.'}</h2><p>Paste your personal API key once. This browser remembers it until you choose Forget key. Cadence exchanges it for an access token and downloads activity, sleep, HRV, and daily health summaries. Opening the app syncs the latest data.</p><div class="setting-row"><div><strong>${connected ? 'Key saved in this browser' : 'No key saved in this browser'}</strong><p>Key expiry and storage are separate: Garmin keys can last 30 days to a year; this app keeps yours in this browser’s local storage until you forget it.</p></div><div class="export-actions"><button class="button button-secondary" data-connect>${connected ? 'Change key' : 'Connect Garmin'} ↗</button>${connected ? '<button class="button button-quiet" id="forget-key">Forget key</button>' : ''}</div></div><div class="setting-row"><div class="setting-grow"><strong>Downloaded history stays local</strong><p>History stays on this computer. Keys, access tokens, account details, and GPS routes are not saved here.</p>${pathField(bootstrap.dataFile, 'Data file')}</div><button class="button button-quiet" id="full-sync" ${busy ? 'disabled' : ''}>Re-fetch full history ↻</button></div><details><summary>Latest sync details</summary>${data.sync ? `<p>Completed ${escapeHtml(new Date(data.sync.completedAt).toLocaleString('en-GB'))}. Fetched ${escapeHtml(data.sync.fetchedFrom)} through ${escapeHtml(data.sync.fetchedTo)}. ${data.sync.fullySuccessful ? 'All requested datasets were downloaded.' : 'Some requests failed; see warnings above.'}</p><p>Successful source windows: ${data.sync.coverage.length}. A successful request can return no records if a metric was not measured.</p>` : '<p>No sync has completed yet.</p>'}</details></section>`
     + howItWorks();
 }
 const REPOSITORY = 'https://github.com/MarkWarneke/garmin';
@@ -300,8 +322,8 @@ async function chooseFolder() {
 }
 function cloudConnection() {
   const folder = cloudWorkspace.name, connected = !!getKey();
-  return heading('YOUR FILES. YOUR TRAINING.', 'Open a folder. Pick up where you left off.', 'The app runs on Cloudflare. Your training history lives in files on your device.', false) + warnings()
-    + `<section class="card panel"><p class="eyebrow">LOCAL WORKSPACE</p><h2>${folder ? 'Connected to ' + escapeHtml(folder) : 'Choose your training data folder.'}</h2><p>Select the folder containing your existing snapshot.json, or choose an empty folder. You can open that same folder in another Chrome or Edge browser to resume your saved history. No Garmin key is needed to read saved data.</p><div class="setting-row"><div><strong>${folder ? escapeHtml(folder) + '/snapshot.json' : 'No local folder selected'}</strong><p>The browser asks for read/write permission. IndexedDB remembers only the folder handle; your training records stay in the file.</p></div><div class="export-actions"><button class="button button-secondary" data-folder ${busy ? 'disabled' : ''}>${folder ? 'Change folder' : 'Choose data folder'} ↗</button>${folder ? '<button class="button button-quiet" id="forget-folder">Disconnect folder</button>' : ''}</div></div></section>`
+  return heading('YOUR FILES. YOUR TRAINING.', 'Open a folder. Pick up where you left off.', 'The app runs on Cloudflare. Your training history lives in files on your device.', false) + warnings() + setupStatus()
+    + `<section class="card panel"><p class="eyebrow">LOCAL WORKSPACE</p><h2>${folder ? 'Connected to ' + escapeHtml(folder) : 'Choose your training data folder.'}</h2><p>Select the folder containing your existing snapshot.json, or choose an empty folder. You can open that same folder in another Chrome or Edge browser to resume your saved history. No Garmin key is needed to read saved data.</p><div class="setting-row"><div class="setting-grow"><strong>Data folder</strong>${pathField(folder ? folder + '/snapshot.json' : 'No local folder selected', 'Data folder')}<p>The browser asks for read/write permission. IndexedDB remembers only the folder handle; your training records stay in the file.</p></div><div class="export-actions"><button class="button button-secondary" data-folder ${busy ? 'disabled' : ''}>${folder ? 'Change folder' : 'Choose data folder'} ↗</button>${folder ? '<button class="button button-quiet" id="forget-folder">Disconnect folder</button>' : ''}</div></div></section>`
     + `<section class="card panel"><p class="eyebrow">GARMIN VIA CLOUDFLARE</p><h2>${connected ? 'Key saved in this browser.' : 'Connect Garmin when you want fresh data.'}</h2><p>Anyone can use Cadence with their own Garmin Personal API key and local data folder. Your key and downloaded responses pass through Cloudflare temporarily. No training database or saved Garmin key is configured in the cloud.</p><div class="export-actions"><button class="button button-secondary" data-connect>${connected ? 'Change key' : 'Connect Garmin'} ↗</button>${connected ? '<button class="button button-quiet" id="forget-key">Forget key</button>' : ''}<button class="button button-quiet" id="full-sync" ${busy ? 'disabled' : ''}>Re-fetch full history ↻</button></div>${data.sync ? `<details><summary>Latest sync details</summary><p>Completed ${escapeHtml(new Date(data.sync.completedAt).toLocaleString('en-GB'))}. ${data.sync.fullySuccessful ? 'All requested datasets downloaded.' : 'See the sync warnings for unavailable data.'}</p></details>` : ''}</section>`
     + howItWorks();
 }
@@ -313,6 +335,11 @@ function render() {
   $('#page').innerHTML = folderBanner() + ({ overview, activities, health, plan, connection }[current])();
   $('#sync-button').disabled = busy;
   $('#sync-button').lastChild.textContent = busy ? ' Syncing…' : ' Sync Garmin';
+  // The sidebar and footer dots turn green only when setup is complete.
+  const setup = setupState();
+  document.body.dataset.setup = setup.level;
+  $('.local-status').title = `${setup.summary} · ${setup.hint}`;
+  if (cloudWorkspace) $('.local-status div span').textContent = setup.level === 'ready' ? 'Your folder · Your Garmin key' : setup.hint;
   $('#sync-label').textContent = data.sync ? `${data.sync.fullySuccessful ? 'Synced' : 'Partial sync'} ${new Date(data.sync.completedAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })} · ${dayLabel(data.sync.fetchedTo)}` : 'Not synced yet';
 }
 async function reload() {
@@ -538,7 +565,6 @@ try {
       session.set('cadence.unsupportedSeen', 'true'); $('#unsupported-dialog').showModal();
     }
     $('.local-status strong').textContent = 'Files on your device';
-    $('.local-status div span').textContent = 'Your folder · Your Garmin key';
     $('.sidebar-note p').textContent = 'Your training history lives in a folder you choose. Open the same folder in another browser to continue.';
     $('.footer span:first-child').textContent = 'Local files · Garmin via Cloudflare';
     $('#connect-dialog .privacy-note p').textContent = 'Your key is saved only in this browser until you forget it. Cloudflare temporarily processes the key and Garmin responses during syncing. Training history is saved only to your selected local folder.';

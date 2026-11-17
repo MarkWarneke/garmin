@@ -47,7 +47,9 @@
   .local-status div { @apply hidden xl:block; }
   .local-status strong { @apply block text-xs font-medium text-gray-800; }
   .local-status div span { @apply mt-1 block text-[11px] text-gray-500; }
-  .status-dot { @apply inline-block size-1.5 shrink-0 rounded-full bg-emerald-500; }
+  .status-dot { @apply inline-block size-1.5 shrink-0 rounded-full bg-gray-300; }
+  body[data-setup="ready"] .status-dot { @apply bg-emerald-500; }
+  body[data-setup="attention"] .status-dot { @apply bg-amber-500; }
   main { @apply min-w-0; }
   .topbar { @apply flex min-h-20 items-center justify-between gap-4 border-b border-gray-200 bg-white px-5 py-4 sm:px-8 lg:px-10; }
   .breadcrumb { @apply text-[10px] font-medium tracking-wider text-gray-400 sm:text-xs; }
@@ -186,6 +188,26 @@
   .setting-row strong { @apply text-xs font-medium text-gray-800; }
   .setting-row p { @apply mt-1 max-w-2xl text-[11px]/6; }
   .setting-row .export-actions { @apply mt-0; }
+  .setting-grow { @apply min-w-0 flex-1 basis-80; }
+  .path-field { @apply my-2 block w-full max-w-xl min-w-0 cursor-text rounded-lg border border-gray-300 bg-gray-50 px-3 py-2.5 font-mono text-[11px] text-gray-800 shadow-inner focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500; }
+  .setup-head { @apply flex flex-wrap items-center gap-4; }
+  .panel .setup-head p { @apply text-sm/6 text-gray-700; }
+  .setup-badge { @apply inline-flex items-center gap-2.5 rounded-full border px-3.5 py-1.5 text-[11px] font-semibold tracking-wide whitespace-nowrap; }
+  .setup-badge.ready { @apply border-emerald-200 bg-emerald-50 text-emerald-700; }
+  .setup-badge.attention { @apply border-amber-200 bg-amber-50 text-amber-700; }
+  .setup-badge.off { @apply border-gray-200 bg-gray-50 text-gray-500; }
+  .pulse { @apply relative flex size-2.5; }
+  .pulse i { @apply absolute inline-flex size-full rounded-full bg-current opacity-60; }
+  .setup-badge.ready .pulse i { @apply animate-ping; }
+  .pulse b { @apply relative inline-flex size-2.5 rounded-full bg-current; }
+  .setup-checks { @apply mt-5 grid gap-3 sm:grid-cols-3; }
+  .setup-checks li { @apply flex items-start gap-3 rounded-lg border border-gray-200 p-3; }
+  .setup-checks li > span:first-child { @apply flex size-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold; }
+  .setup-checks li.ok > span:first-child { @apply bg-emerald-50 text-emerald-700; }
+  .setup-checks li.missing { @apply border-amber-200 bg-amber-50/50; }
+  .setup-checks li.missing > span:first-child { @apply bg-amber-100 text-amber-700; }
+  .setup-checks strong { @apply block text-xs font-medium text-gray-800; }
+  .panel .setup-checks p { @apply mt-0.5 text-[11px]/5 break-all; }
   .code-box { @apply my-4 block overflow-auto rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 font-mono text-[11px]/6 whitespace-pre-wrap text-gray-600; overflow-wrap: anywhere; }
   .setup-grid { @apply grid gap-6 xl:grid-cols-2; }
   .setup-grid .panel + .panel, .split-bottom .panel + .panel { @apply mt-0; }
