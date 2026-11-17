@@ -83,6 +83,16 @@ Arguments: /absolute/path/to/cadence/src/mcp.mjs
 
 Both paths are shown under **Data & connection** in the local app. Tools: `garmin_sync_status`, `garmin_training_overview`, `garmin_activities`, `garmin_health_trends`, and `athlete_profile`.
 
+### Optional: remote MCP endpoint on the hosted Worker
+
+The hosted app also serves a stateless, read-only MCP endpoint at `https://<your-worker>/mcp` that reads live from Garmin. It is meant for MCP clients that let you set request headers, such as Claude Code, Codex, and Cursor. claude.ai and ChatGPT connectors are not supported, because they require OAuth. The client sends your Personal API key with every request; the Worker exchanges it for a short-lived Garmin token, returns normalized data, and keeps nothing. Requests sent by web pages (with an `Origin` header) are refused.
+
+```sh
+claude mcp add --transport http cadence https://<your-worker>/mcp --header "Authorization: Bearer $GARMIN_PERSONAL_API_KEY"
+```
+
+Keep the key in your client's MCP configuration or an environment variable, not in chat. Tools: `garmin_activities`, `garmin_activity_details`, `garmin_health` (up to 31 days), and `garmin_athlete`. Each tool call makes a token exchange plus one or more Garmin requests, so ask for short ranges. Results omit coordinates, place names, account IDs, and the Garmin display name. The endpoint cannot read your saved folder or profile.
+
 ## Fork and run your own copy
 
 1. **Fork** [MarkWarneke/garmin](https://github.com/MarkWarneke/garmin) on GitHub and clone your fork. Forks may be used and changed for any noncommercial purpose; see [License](#license).
@@ -106,6 +116,7 @@ Both paths are shown under **Data & connection** in the local app. Tools: `garmi
 | `public/folder-workspace.mjs` | Hosted mode: reads and writes the chosen local folder |
 | `src/server.mjs`, `src/data.mjs` | Local mode: HTTP server and file storage |
 | `src/worker.mjs` | Hosted mode: Cloudflare Worker that serves the UI and relays Garmin requests |
+| `src/worker-mcp.mjs` | Hosted mode: stateless remote MCP endpoint at `/mcp` |
 | `src/mcp.mjs` | Optional read-only MCP adapter |
 | `styles/app.css` | Tailwind source; compiled to `public/styles.css`, which is checked in so `npm start` needs no build |
 | `test/` | Node test runner suites with synthetic Garmin responses |
@@ -120,7 +131,7 @@ npm run build               # compile CSS and prepare the Cloudflare assets
 npm run check:cloudflare    # dry-run the Worker deployment
 ```
 
-Tests use synthetic Garmin responses and temporary directories, and never contact a real Garmin account. They cover data shapes and missing values, pagination, incremental sync planning, partial failures, credential redaction, re-authentication, the local server's origin and request-token checks, file permissions, the Worker relay's restrictions, folder storage, the profile and prompt, and a real MCP client/server exchange. The local server tests need permission to bind a loopback port.
+Tests use synthetic Garmin responses and temporary directories, and never contact a real Garmin account. They cover data shapes and missing values, pagination, incremental sync planning, partial failures, credential redaction, re-authentication, the local server's origin and request-token checks, file permissions, the Worker relay's restrictions, the remote MCP endpoint, folder storage, the profile and prompt, and a real MCP client/server exchange. The local server tests need permission to bind a loopback port.
 
 ## Security notes
 

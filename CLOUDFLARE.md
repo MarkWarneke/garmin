@@ -2,7 +2,7 @@
 
 The workflow `.github/workflows/cloudflare.yml` tests and builds every pull request and push to `main`. Pushes to `main` and manual runs then deploy the Worker and UI together.
 
-The deployed app is public and needs no sign-in. Each visitor uses their own Garmin Personal API key and their own local folder in Chrome or Edge. The Worker has no D1, R2, or KV bindings, stores no training data or keys, and has request logging and observability turned off. Keys and Garmin responses pass through it only while a sync runs, with `Cache-Control: no-store`. The Worker relays Garmin's complete responses, which can include start and end coordinates of outdoor activities, place names, the Garmin display name, and weight details; the browser removes them before saving. See [How it works](README.md#how-it-works).
+The deployed app is public and needs no sign-in. Each visitor uses their own Garmin Personal API key and their own local folder in Chrome or Edge. The Worker has no D1, R2, or KV bindings, stores no training data or keys, and has request logging and observability turned off. Keys and Garmin responses pass through it only while a sync runs, or while an MCP client calls the optional `/mcp` endpoint, with `Cache-Control: no-store`. The Worker relays Garmin's complete responses, which can include start and end coordinates of outdoor activities, place names, the Garmin display name, and weight details; the browser removes them before saving. The `/mcp` endpoint removes them in the Worker before replying. See [How it works](README.md#how-it-works).
 
 ## 1. Create a Cloudflare API token
 

@@ -1,5 +1,6 @@
 import { GarminClient, GarminError } from '../public/shared/garmin.mjs';
 import { validDay, shiftDay } from '../public/shared/model.mjs';
+import { createMcpEndpoint } from './worker-mcp.mjs';
 
 function headers(extra = {}) {
   return { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer',
@@ -62,9 +63,24 @@ function upstreamRoute(name, query) {
   throw new GarminError('Unknown Garmin operation.', 404);
 }
 export function createWorker({ fetchImpl = fetch } = {}) {
+  const mcp = createMcpEndpoint({ fetchImpl });
   return { async fetch(request, env) {
     const url = new URL(request.url);
     try {
+      if (url.pathname === '/mcp') {
+        // For desktop assistants and coding agents, not web pages: a browser-sent Origin is refused so no site can
+        // drive this endpoint with a visitor's key. The key travels as a bearer header and is never stored.
+        if (request.headers.get('Origin')) return json({ error: 'Browser requests are not allowed.' }, 403);
+        const authorization = request.headers.get('Authorization') || '';
+        const [scheme, key, extra] = authorization.split(' ');
+        if (authorization.length > 8192 || scheme !== 'Bearer' || !key || extra !== undefined || /[\r\n]/.test(authorization)) {
+          return json({ error: 'Send your Garmin Personal API key as "Authorization: Bearer <key>".' }, 401);
+        }
+        const response = await mcp.fetch(request, { authInfo: { token: key, clientId: 'garmin-personal-api-key', scopes: [] } });
+        const secured = new Response(response.body, response);
+        for (const [name, value] of Object.entries(headers())) secured.headers.set(name, value);
+        return secured;
+      }
       if (request.method === 'GET' && url.pathname === '/api/bootstrap') {
         return json({ mode: 'cloud', storage: 'local-folder', timezone: 'Europe/Berlin' });
       }
