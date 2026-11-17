@@ -74,6 +74,8 @@
   .text-button { @apply inline-flex items-center gap-2 bg-transparent p-0 text-xs font-medium text-orange-700 hover:text-orange-900; }
   .pill { @apply inline-flex items-center rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 text-[9px] font-medium tracking-wide whitespace-nowrap text-gray-500; }
   .pill.orange { @apply border-orange-200 bg-orange-50 text-orange-700; }
+  .pill.green { @apply border-emerald-200 bg-emerald-50 text-emerald-700; }
+  .pill-group { @apply flex flex-wrap justify-end gap-2; }
   .warning { @apply mb-6 rounded-lg border border-amber-200 bg-amber-50 px-5 py-4 text-xs/6 text-amber-800; }
   .warning summary { @apply font-semibold; }
   .warning ul { @apply mt-2 list-disc pl-5; }
@@ -125,6 +127,7 @@
   .activity-name { @apply flex min-w-44 max-w-80 items-center gap-3 whitespace-normal; }
   .activity-name b { @apply block text-xs font-medium text-gray-800; }
   .activity-name span { @apply mt-1 block text-[10px] text-gray-500; }
+  .table-sub { @apply mt-1 block text-[10px] text-gray-400; }
   .activity-icon { @apply flex size-9 shrink-0 items-center justify-center rounded-lg bg-amber-50 text-amber-700; }
   .activity-icon svg { @apply size-5; }
   .activity-icon.cycling { @apply bg-orange-50 text-orange-600; }
@@ -146,6 +149,7 @@
   .metric-mark svg { @apply size-4; }
   .metric-mark.sleep { @apply bg-indigo-50 text-indigo-400; }
   .metric-mark.heart { @apply bg-orange-50 text-orange-400; }
+  .metric-mark.rpe { @apply bg-amber-50 text-amber-600; }
   .recovery-name { @apply min-w-0 text-xs text-gray-700; }
   .recovery-name span { @apply mt-1 block text-[10px] text-gray-400; }
   .recovery-value { @apply ml-auto text-lg font-medium whitespace-nowrap tabular-nums; }

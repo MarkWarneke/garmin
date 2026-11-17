@@ -114,8 +114,10 @@ export function normalizeSleep(d) {
 }
 export function normalizeHrv(d) {
   if (!validDay(d.calendarDate)) return null;
+  // baseline.balancedLow/Upper is the personal normal range Garmin compares the 7-day average with.
   return { date: d.calendarDate, hrvMs: number(d.lastNightAvg), hrvWeeklyMs: number(d.weeklyAvg),
     hrvStatus: text(d.status, 30),
+    hrvBaselineLowMs: number(d.baseline?.balancedLow), hrvBaselineHighMs: number(d.baseline?.balancedUpper),
   };
 }
 export function mergeRecords(existing, incoming, key = 'date') {
@@ -171,6 +173,7 @@ export function selectData(snapshot, days = 30, endDate = isoDay()) {
       'coaching.trainingLoad: fitness and fatigue are 42- and 7-day averages of Garmin activity training load; form = fitness − fatigue. Treat it as unreliable when reliable is false.',
       'trainingStress per activity is Garmin TSS, or estimated from normalized power and the FTP Garmin used on that day. coaching.weekly covers the last 12 weeks.',
       'athlete holds Garmin profile settings (training days, heart rate zones, weight, latest FTP); the athlete profile in the prompt takes precedence.',
+      'hrvBaselineLowMs and hrvBaselineHighMs are the personal balanced HRV range Garmin compares hrvWeeklyMs with; hrvStatus is the result.',
       'Activity rpe is 1–10, feel is 0–100 (higher is better), intervals summarize splits by type, and plannedWorkout lists the targets of a structured workout.',
       'Zone times use the heart rate and power zones configured in Garmin when each activity was recorded.',
       'ftpTests covers all saved history: estimatedFtp is 75% of the best one-minute power in a ramp test. Prefer an FTP the athlete states.',

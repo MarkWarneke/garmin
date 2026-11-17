@@ -13,6 +13,8 @@ test('normalizes documented DTOs, preserves missing values, and excludes profile
   assert.equal(normalizeSleep(sleep()).sleepSeconds, 27000);
   assert.equal(normalizeSleep(sleep()).sleepScore, 85);
   assert.equal(normalizeHrv(hrv()).hrvMs, 55);
+  assert.equal(normalizeHrv(hrv()).hrvBaselineLowMs, 48); assert.equal(normalizeHrv(hrv()).hrvBaselineHighMs, 62);
+  assert.equal(normalizeHrv({ calendarDate: '2026-11-16', lastNightAvg: 55 }).hrvBaselineLowMs, null);
   assert.equal(normalizeDaily({ calendarDate: '2026-11-16', stress: { avgLevel: -1 } }).stress, null);
   assert.equal(normalizeDaily({ calendarDate: '2026-11-16' }).steps, null);
   assert.equal(normalizeDaily({ calendarDate: '2026-02-30' }), null);

@@ -7,7 +7,8 @@ export const daily = (day = '2026-11-16') => ({ calendarDate: day, heartRate: { 
   stress: { avgLevel: 29 }, bodyBattery: { maxValue: 81, minValue: 24, latestValue: 36 } });
 export const sleep = (day = '2026-11-16') => ({ calendarDate: day, sleepTimeSeconds: 27000, deepSleepSeconds: 5000,
   remSleepSeconds: 6000, lightSleepSeconds: 16000, sleepScores: { overall: { value: 85 } } });
-export const hrv = (day = '2026-11-16') => ({ calendarDate: day, lastNightAvg: 55, weeklyAvg: 53, status: 'BALANCED' });
+export const hrv = (day = '2026-11-16') => ({ calendarDate: day, lastNightAvg: 55, weeklyAvg: 53, status: 'BALANCED',
+  baseline: { lowUpper: 44, balancedLow: 48, balancedUpper: 62, markerValue: 0.5 } });
 export const settings = () => ({ displayName: 'private-display-name', availableTrainingDays: ['SATURDAY', 'MONDAY', 'WEDNESDAY'],
   preferredLongTrainingDays: ['SATURDAY'], timeZone: 'Europe/Berlin' });
 export const zones = () => [{ sport: 'DEFAULT', trainingMethod: 'HR_MAX', maxHeartRateUsed: 190, restingHeartRateUsed: 50, zone1Floor: 95 },

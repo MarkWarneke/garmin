@@ -142,39 +142,59 @@ function weeklyChart() {
   }).join('');
   return `<div class="weekly-chart-wrap"><svg class="weekly-svg" viewBox="0 0 580 210" role="img" aria-label="Training duration by sport for the last seven days">${grid}${bars}</svg>${totals.some(v => v > 0) ? '' : `<div class="chart-empty"><strong>${data.sync ? 'A quiet week.' : 'Your week, at a glance.'}</strong><span>${data.sync ? 'No training recorded in the last seven days.' : 'Training sessions will appear here after syncing.'}</span></div>`}</div><div class="legend">${Object.entries(categories).map(([key, c]) => `<span><i class="legend-${key}"></i>${c.label}</span>`).join('')}</div>`;
 }
-function sparkline(field, color, compact = false) {
+// An optional overlay field (e.g. Garmin's 7-day HRV average) is drawn dashed on the same scale,
+// and an optional band ([lowField, highField], e.g. Garmin's HRV baseline) as a shaded range behind it.
+function sparkline(field, color, compact = false, overlay = null, band = null) {
   const count = compact ? 14 : Math.min(range, 90), end = data.range.endDate;
-  const byDate = new Map(data.health.map(d => [d.date, d[field]]));
-  const points = Array.from({ length: count }, (_, i) => byDate.get(shiftDay(end, i + 1 - count)) ?? null);
+  const byDate = new Map(data.health.map(d => [d.date, d]));
+  const series = f => Array.from({ length: count }, (_, i) => byDate.get(shiftDay(end, i + 1 - count))?.[f] ?? null);
+  const points = series(field), extra = overlay && !compact ? series(overlay) : [];
+  const [low, high] = band && !compact ? band.map(series) : [[], []];
   const measured = points.filter(v => v != null);
   if (!measured.length) return compact ? '' : '<div class="health-empty">No measurements recorded in this period</div>';
-  const min = Math.min(...measured), max = Math.max(...measured), span = Math.max(max - min, max * .08, 1);
+  const scale = [...measured, ...extra, ...low, ...high].filter(v => v != null);
+  const min = Math.min(...scale), max = Math.max(...scale), span = Math.max(max - min, max * .08, 1);
   const w = compact ? 70 : 500, h = compact ? 24 : 120, padding = compact ? 3 : 15;
-  let path = '', drawing = false;
-  const coords = [];
-  points.forEach((value, i) => {
-    if (value == null) { drawing = false; return; }
-    const x = padding + i / Math.max(1, count - 1) * (w - padding * 2);
-    const y = padding + (1 - (value - min + span * .15) / (span * 1.3)) * (h - padding * 2);
-    path += `${drawing ? 'L' : 'M'}${x.toFixed(1)},${y.toFixed(1)} `;
-    drawing = true; coords.push([x, y]);
+  const px = i => padding + i / Math.max(1, count - 1) * (w - padding * 2);
+  const py = value => padding + (1 - (value - min + span * .15) / (span * 1.3)) * (h - padding * 2);
+  const trace = values => {
+    let path = '', drawing = false;
+    const coords = [];
+    values.forEach((value, i) => {
+      if (value == null) { drawing = false; return; }
+      const x = px(i), y = py(value);
+      path += `${drawing ? 'L' : 'M'}${x.toFixed(1)},${y.toFixed(1)} `;
+      drawing = true; coords.push([x, y]);
+    });
+    return { path, coords };
+  };
+  // One polygon per run of consecutive days with both band edges recorded.
+  const runs = [];
+  low.forEach((value, i) => {
+    if (value == null || high[i] == null) return;
+    if (runs.at(-1)?.at(-1) === i - 1) runs.at(-1).push(i); else runs.push([i]);
   });
+  const bandShapes = runs.map(run => `<polygon points="${[...run.map(i => [px(i), py(high[i])]), ...[...run].reverse().map(i => [px(i), py(low[i])])].map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ')}" fill="${color}" fill-opacity=".14"/>`).join('');
+  const { path, coords } = trace(points), overlayPath = extra.length ? trace(extra).path : '';
   const unitValue = v => field === 'sleepSeconds' ? numeric(v / 3600, 1) + 'h' : numeric(v);
-  return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" role="img" aria-label="${escapeHtml(field)} trend, ${measured.length} measured days; range ${unitValue(min)} to ${unitValue(max)}">${compact ? '' : `<line x1="0" x2="500" y1="115" y2="115" stroke="#e9eee0"/><line x1="0" x2="500" y1="60" y2="60" stroke="#f0f3eb"/>`}<path d="${path}" fill="none" stroke="${color}" stroke-width="${compact ? 1.7 : 2}" vector-effect="non-scaling-stroke" stroke-linecap="round" stroke-linejoin="round"/>${coords.map(([x, y]) => `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${compact ? 1.1 : 2}" fill="${color}"/>`).join('')}</svg>`;
+  return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" role="img" aria-label="${escapeHtml(field)} trend, ${measured.length} measured days; range ${unitValue(min)} to ${unitValue(max)}">${compact ? '' : `<line x1="0" x2="500" y1="115" y2="115" stroke="#e9eee0"/><line x1="0" x2="500" y1="60" y2="60" stroke="#f0f3eb"/>`}${bandShapes}${overlayPath ? `<path d="${overlayPath}" fill="none" stroke="#7d8a6c" stroke-width="1.5" stroke-dasharray="4 3" vector-effect="non-scaling-stroke" stroke-linecap="round"/>` : ''}<path d="${path}" fill="none" stroke="${color}" stroke-width="${compact ? 1.7 : 2}" vector-effect="non-scaling-stroke" stroke-linecap="round" stroke-linejoin="round"/>${coords.map(([x, y]) => `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${compact ? 1.1 : 2}" fill="${color}"/>`).join('')}</svg>`;
 }
 const healthMetrics = [
   { field: 'sleepSeconds', label: 'Sleep duration', short: 'Sleep', mark: 'sleep', format: duration, unit: '', color: '#9babc2', caption: 'Measured sleep, excluding naps' },
-  { field: 'hrvMs', label: 'Overnight HRV', short: 'Heart rate variability', mark: 'hrv', format: numeric, unit: 'ms', color: '#9cab88', caption: 'Garmin overnight average' },
+  { field: 'hrvMs', label: 'Overnight HRV', short: 'Heart rate variability', mark: 'hrv', format: numeric, unit: 'ms', color: '#9cab88', caption: 'Garmin overnight average; dashed line is the 7-day average, shaded band your Garmin baseline', overlay: 'hrvWeeklyMs', band: ['hrvBaselineLowMs', 'hrvBaselineHighMs'] },
   { field: 'restingHeartRate', label: 'Resting heart rate', short: 'Resting heart rate', mark: 'heart', format: numeric, unit: 'bpm', color: '#c79075', caption: 'Garmin daily resting heart rate' },
   { field: 'stress', label: 'Daily stress', short: 'Daily stress', mark: 'stress', format: numeric, unit: '/100', color: '#b5a77b', caption: 'Garmin daily average stress' },
   { field: 'bodyBatteryHigh', label: 'Body Battery', short: 'Body Battery peak', mark: 'battery', format: numeric, unit: '/100', color: '#7fa48e', caption: 'Highest Body Battery value of the day' },
   { field: 'steps', label: 'Daily steps', short: 'Daily steps', mark: 'steps', format: numeric, unit: 'steps', color: '#96aa80', caption: 'Recorded daily step count' },
 ];
 function recovery() {
-  return `<section class="card"><div class="card-heading"><div><h2>Recovery signals</h2><p class="sub">Latest available measurements</p></div><span class="pill">GARMIN</span></div><div class="recovery-list">${healthMetrics.slice(0, 4).map(m => `<div class="recovery-row"><span class="metric-mark ${m.mark}">${icon(m.mark)}</span><div class="recovery-name">${m.short}<span>${metricCaption(m.field)}</span></div><div class="recovery-value">${m.format(latest(m.field)?.[m.field] ?? null)}<small>${m.unit}</small></div><div class="recovery-spark">${sparkline(m.field, m.color, true)}</div></div>`).join('')}</div></section>`;
+  return `<section class="card"><div class="card-heading"><div><h2>Recovery signals</h2><p class="sub">Latest available measurements</p></div><span class="pill">GARMIN</span></div><div class="recovery-list">${healthMetrics.slice(0, 4).map(m => `<div class="recovery-row"><span class="metric-mark ${m.mark}">${icon(m.mark)}</span><div class="recovery-name">${m.short}<span>${metricCaption(m.field)}</span></div><div class="recovery-value">${m.format(latest(m.field)?.[m.field] ?? null)}<small>${m.unit}</small></div><div class="recovery-spark">${sparkline(m.field, m.color, true)}</div></div>`).join('')}${(() => {
+    const rated = data.activities.find(a => a.rpe != null);
+    return `<div class="recovery-row"><span class="metric-mark rpe">${icon('activities')}</span><div class="recovery-name">Perceived effort<span>${rated ? `${escapeHtml(rated.name)}, ${dayLabel(rated.date)}` : 'No rated sessions in this period'}</span></div><div class="recovery-value">${numeric(rated?.rpe ?? null, 1)}<small>/10</small></div></div>`;
+  })()}</div></section>`;
 }
 function activityTable(items, all = false) {
-  return `<section class="card"><div class="card-heading"><div><h2>${all ? 'Your activities' : 'Recent activities'}</h2><p class="sub">${all ? items.length + ' matching sessions' : 'A little of everything you love to do'}</p></div>${all ? '' : '<button class="link-button" data-route="activities">View all <span>↗</span></button>'}</div><div class="table-container"><table class="min-w-full divide-y-2 divide-gray-200"><thead class="text-left"><tr class="*:font-medium *:text-gray-500"><th>Activity</th><th>Date</th><th>Duration</th><th>Distance</th><th>Avg. HR</th><th><span class="sr-only">Details</span></th></tr></thead><tbody class="divide-y divide-gray-100">${items.length ? items.map(a => `<tr><td><button class="activity-link" data-activity="${escapeHtml(a.id)}"><div class="activity-name"><div class="activity-icon ${category(a.sport)}">${icon(category(a.sport))}</div><div><b>${escapeHtml(a.name)}</b><span>${escapeHtml(sportLabel(a.sport))}</span></div></div></button></td><td>${dayLabel(a.date)}</td><td>${duration(a.durationSeconds)}</td><td>${a.distanceMeters != null ? km(a.distanceMeters) + ' km' : '—'}</td><td>${numeric(a.averageHeartRate)}${a.averageHeartRate != null ? ' bpm' : ''}</td><td><button class="arrow-link" data-activity="${escapeHtml(a.id)}" aria-label="View ${escapeHtml(a.name)}">↗</button></td></tr>`).join('') : `<tr><td colspan="6"><div class="table-empty"><strong>${activitySearch || activitySport !== 'all' ? 'No activities match your filters.' : 'Your next chapter starts with a sync.'}</strong><p>${data.sync ? 'Activities recorded in this period will appear here.' : 'Connect Garmin to bring your recent training into view.'}</p></div></td></tr>`}</tbody></table></div></section>`;
+  return `<section class="card"><div class="card-heading"><div><h2>${all ? 'Your activities' : 'Recent activities'}</h2><p class="sub">${all ? items.length + ' matching sessions' : 'A little of everything you love to do'}</p></div>${all ? '' : '<button class="link-button" data-route="activities">View all <span>↗</span></button>'}</div><div class="table-container"><table class="min-w-full divide-y-2 divide-gray-200"><thead class="text-left"><tr class="*:font-medium *:text-gray-500"><th>Activity</th><th>Date</th><th>Duration</th><th>Distance</th><th>Avg. HR</th><th>Avg. power</th><th>RPE</th><th><span class="sr-only">Details</span></th></tr></thead><tbody class="divide-y divide-gray-100">${items.length ? items.map(a => `<tr><td><button class="activity-link" data-activity="${escapeHtml(a.id)}"><div class="activity-name"><div class="activity-icon ${category(a.sport)}">${icon(category(a.sport))}</div><div><b>${escapeHtml(a.name)}</b><span>${escapeHtml(sportLabel(a.sport))}</span></div></div></button></td><td>${dayLabel(a.date)}</td><td>${duration(a.durationSeconds)}</td><td>${a.distanceMeters != null ? km(a.distanceMeters) + ' km' : '—'}</td><td>${numeric(a.averageHeartRate)}${a.averageHeartRate != null ? ' bpm' : ''}</td><td>${a.averagePower != null ? `${numeric(a.averagePower)} W${a.normalizedPower != null ? `<span class="table-sub">NP ${numeric(a.normalizedPower)} W</span>` : ''}` : '—'}</td><td>${a.rpe != null ? numeric(a.rpe, 1) + '/10' : '—'}</td><td><button class="arrow-link" data-activity="${escapeHtml(a.id)}" aria-label="View ${escapeHtml(a.name)}">↗</button></td></tr>`).join('') : `<tr><td colspan="8"><div class="table-empty"><strong>${activitySearch || activitySport !== 'all' ? 'No activities match your filters.' : 'Your next chapter starts with a sync.'}</strong><p>${data.sync ? 'Activities recorded in this period will appear here.' : 'Connect Garmin to bring your recent training into view.'}</p></div></td></tr>`}</tbody></table></div></section>`;
 }
 function overview() {
   return heading('MOVE. RECOVER. REPEAT.', 'Your training, in perspective.', 'A clearer view of your effort, your recovery, and what comes next.') + connectionBanner() + warnings()
@@ -189,14 +209,34 @@ function activities() {
   return heading('THE WORK YOU PUT IN', 'Every session adds up.', 'Your recent activities, across all the ways you like to move.') + warnings()
     + `<div class="section-toolbar"><input type="search" id="activity-search" placeholder="Search your activities…" aria-label="Search activities" value="${escapeHtml(activitySearch)}"><select id="activity-sport" aria-label="Filter by sport"><option value="all">All sports</option>${Object.entries(categories).map(([key, c]) => `<option value="${key}" ${activitySport === key ? 'selected' : ''}>${c.label}</option>`).join('')}</select><span class="pill">${items.length} SESSIONS</span></div>` + activityTable(items, true);
 }
+// Garmin's HRV status compares the 7-day average with the personal baseline it keeps on the watch.
+function hrvStatus() {
+  const row = latest('hrvStatus');
+  if (!row) return '';
+  const label = sportLabel(row.hrvStatus.toLowerCase());
+  const baseline = row.hrvBaselineLowMs != null && row.hrvBaselineHighMs != null ? ` · baseline ${row.hrvBaselineLowMs}–${row.hrvBaselineHighMs} ms` : '';
+  return `<span class="pill ${row.hrvStatus === 'BALANCED' ? 'green' : 'orange'}" title="Garmin HRV status, ${dayLabel(row.date)}${row.hrvWeeklyMs != null ? ` · 7-day average ${row.hrvWeeklyMs} ms` : ''}${baseline}">${escapeHtml(label.toUpperCase())}</span>`;
+}
+// Perceived effort per rated session (Garmin RPE 1–10), placed by date on the same window as the health charts.
+function rpeCard() {
+  const days = Math.min(range, 90), start = shiftDay(data.range.endDate, 1 - days);
+  const rated = data.activities.filter(a => a.rpe != null), shown = rated.filter(a => a.date >= start);
+  const average = rated.length ? rated.reduce((s, a) => s + a.rpe, 0) / rated.length : null;
+  const x = day => 15 + (Date.parse(day + 'T12:00:00Z') - Date.parse(start + 'T12:00:00Z')) / 86400000 / Math.max(1, days - 1) * 470;
+  const y = rpe => 115 - rpe / 10 * 100;
+  const chart = shown.length
+    ? `<svg viewBox="0 0 500 120" preserveAspectRatio="none" role="img" aria-label="Perceived effort for ${shown.length} rated sessions">${[3, 6, 9].map(v => `<line x1="0" x2="500" y1="${y(v)}" y2="${y(v)}" stroke="${v === 6 ? '#e9eee0' : '#f0f3eb'}"/>`).join('')}${shown.map(a => `<circle cx="${x(a.date).toFixed(1)}" cy="${y(a.rpe).toFixed(1)}" r="4" fill="${categories[category(a.sport)].color}"><title>${escapeHtml(a.name)} · ${dayLabel(a.date)} · RPE ${numeric(a.rpe, 1)}/10${a.trainingLoad != null ? ` · Garmin load ${numeric(a.trainingLoad)}` : ''}${a.feel != null ? ` · feel ${numeric(a.feel)}/100` : ''}</title></circle>`).join('')}</svg>`
+    : '<div class="health-empty">No rated sessions in this period</div>';
+  return `<section class="card"><div class="card-heading"><h2>Perceived effort</h2><span class="stat-icon">${icon('activities')}</span></div><div class="card-inner"><div class="health-metric-top"><div><div class="health-value">${numeric(rated[0]?.rpe ?? null, 1)} <small>/10</small></div><p class="health-caption">${rated[0] ? `Latest rating: ${escapeHtml(rated[0].name)}, ${dayLabel(rated[0].date)}` : 'No rated sessions yet'}${average != null ? ` · average ${numeric(average, 1)}` : ''}</p></div><span class="pill">${rated.length} OF ${data.activities.length} RATED</span></div><div class="line-chart">${chart}</div><div class="line-legend"><span>${dayLabel(start)}</span><span>${dayLabel(data.range.endDate)}</span></div><p class="health-caption">RPE 1–10 from Garmin, one dot per rated session · Rate effort on your watch or in Garmin Connect after each session · ${range > 90 ? 'chart shows latest 90 days' : 'unrated sessions are not shown'}</p></div></section>`;
+}
 function health() {
   return heading('THE OTHER HALF OF TRAINING', 'Recovery has a rhythm.', 'Look for patterns over time. Missing measurements stay missing.') + warnings()
     + `<div class="health-grid">${healthMetrics.map(m => {
       const row = latest(m.field), measured = data.health.filter(d => d[m.field] != null);
       const chartValues = measured.filter(d => d.date >= shiftDay(data.range.endDate, 1 - Math.min(range, 90))).map(d => d[m.field]);
       const chartRange = chartValues.length ? `Range: ${m.format(Math.min(...chartValues))}–${m.format(Math.max(...chartValues))} ${m.unit} · ` : '';
-      return `<section class="card"><div class="card-heading"><h2>${m.label}</h2><span class="stat-icon">${icon(m.mark)}</span></div><div class="card-inner"><div class="health-metric-top"><div><div class="health-value">${m.format(row?.[m.field] ?? null)} <small>${m.unit}</small></div><p class="health-caption">${metricCaption(m.field)}</p></div><span class="pill">${measured.length} MEASURED DAYS</span></div><div class="line-chart">${sparkline(m.field, m.color)}</div><div class="line-legend"><span>${dayLabel(shiftDay(data.range.endDate, 1 - Math.min(range, 90)))}</span><span>${dayLabel(data.range.endDate)}</span></div><p class="health-caption">${chartRange}${m.caption} · ${range > 90 ? 'chart shows latest 90 days' : 'gaps indicate missing measurements'}</p></div></section>`;
-    }).join('')}</div>`;
+      return `<section class="card"><div class="card-heading"><h2>${m.label}</h2><span class="stat-icon">${icon(m.mark)}</span></div><div class="card-inner"><div class="health-metric-top"><div><div class="health-value">${m.format(row?.[m.field] ?? null)} <small>${m.unit}</small></div><p class="health-caption">${metricCaption(m.field)}</p></div><div class="pill-group">${m.overlay ? hrvStatus() : ''}<span class="pill">${measured.length} MEASURED DAYS</span></div></div><div class="line-chart">${sparkline(m.field, m.color, false, m.overlay, m.band)}</div><div class="line-legend"><span>${dayLabel(shiftDay(data.range.endDate, 1 - Math.min(range, 90)))}</span><span>${dayLabel(data.range.endDate)}</span></div><p class="health-caption">${chartRange}${m.caption} · ${range > 90 ? 'chart shows latest 90 days' : 'gaps indicate missing measurements'}</p></div></section>`;
+    }).join('')}${rpeCard()}</div>`;
 }
 // Setup help appears only while something is missing: a folder (hosted), a Garmin key, or a first sync.
 function planCards() {

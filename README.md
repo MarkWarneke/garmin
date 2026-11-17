@@ -39,7 +39,7 @@ The first sync downloads the selected range (90 days by default). Later syncs re
 
 - **Activities:** sport, start time, duration, distance, elevation, calories, heart rate, Garmin training load and effects, average/normalized/max power, best power from 1 second to 5 hours, intensity factor, cadence, VO2max, and time in each heart rate and power zone.
 - **Daily health:** resting heart rate, steps, stress, Body Battery.
-- **Sleep and HRV:** duration, stages, sleep score, overnight HRV and status.
+- **Sleep and HRV:** duration, stages, sleep score, overnight HRV, its 7-day average, status, and Garmin's personal baseline range.
 - **Activity details** (one request per activity, fetched once, up to 150 per sync): the FTP Garmin used, perceived effort (RPE) and feel, interval summaries by type (active, rest, warm-up), and the planned workout steps for structured workouts. Coordinates in these responses are dropped.
 - **Garmin training settings:** training days and long-session days, heart rate zones (max, resting, threshold), and latest weight. They pre-fill the plan form; your own answers take precedence.
 - **Sync coverage** and per-request warnings.
