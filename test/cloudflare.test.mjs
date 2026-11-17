@@ -125,3 +125,16 @@ test('Worker relays the training settings and activity detail operations with va
   assert.equal((await worker.fetch(request('/api/garmin/weight', { startDate: '2026-01-01', endDate: '2026-11-16' }), {})).status, 400);
   assert.equal(mock.calls.find(c => c.url.pathname.endsWith('heartRateZones/v2')).url.searchParams.get('generateDefaults'), 'false');
 });
+test('rate limits relay calls per IP and MCP calls per hashed key, and stays open when the limiter fails', async () => {
+  const mock = mockGarmin(); const worker = createWorker(mock); const keys = [];
+  const limiter = success => ({ limit: async ({ key }) => { keys.push(key); return { success }; } });
+  const blocked = { RELAY_LIMIT: limiter(false), MCP_LIMIT: limiter(false) };
+  const relay = await worker.fetch(request('/api/garmin/token', {}, { 'CF-Connecting-IP': '203.0.113.7' }), blocked);
+  assert.equal(relay.status, 429); assert.equal(relay.headers.get('retry-after'), '30');
+  const mcp = await worker.fetch(new Request(base + '/mcp', { method: 'POST', headers: { Authorization: 'Bearer test-personal-key' } }), blocked);
+  assert.equal(mcp.status, 429);
+  assert.equal(keys[0], '203.0.113.7'); assert.match(keys[1], /^[0-9a-f]{64}$/);
+  assert.equal(mock.calls.length, 0);
+  const failing = { RELAY_LIMIT: { limit: async () => { throw new Error('limiter unavailable'); } } };
+  assert.equal((await worker.fetch(request('/api/garmin/token'), failing)).status, 200);
+});

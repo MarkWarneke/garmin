@@ -2,11 +2,22 @@ import { GarminClient, GarminError } from '../public/shared/garmin.mjs';
 import { validDay, shiftDay } from '../public/shared/model.mjs';
 import { createMcpEndpoint } from './worker-mcp.mjs';
 
+// Also written to the static assets' _headers file, which Cloudflare serves without running this Worker.
+export const securityHeaders = { 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer',
+  'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
+  'Cross-Origin-Resource-Policy': 'same-origin' };
 function headers(extra = {}) {
-  return { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer',
-    'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
-    'Cross-Origin-Resource-Policy': 'same-origin', ...extra };
+  return { 'Cache-Control': 'no-store', ...securityHeaders, ...extra };
 }
+const sha256 = async value => [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value)))]
+  .map(byte => byte.toString(16).padStart(2, '0')).join('');
+// Cloudflare's rate limiter keeps short-lived counters only. Without the binding (tests, local runs) or when the
+// limiter fails, requests are allowed: throttling protects the service, it must not break it.
+async function throttled(limiter, key) {
+  if (!limiter) return false;
+  try { return !(await limiter.limit({ key })).success; } catch { return false; }
+}
+const tooMany = () => json({ error: 'Too many requests. Wait a minute and try again.' }, 429, { 'Retry-After': '30' });
 const json = (value, status = 200, extra) => new Response(JSON.stringify(value), { status,
   headers: headers({ 'Content-Type': 'application/json; charset=utf-8', ...extra }) });
 async function readQuery(request) {
@@ -76,6 +87,8 @@ export function createWorker({ fetchImpl = fetch } = {}) {
         if (authorization.length > 8192 || scheme !== 'Bearer' || !key || extra !== undefined || /[\r\n]/.test(authorization)) {
           return json({ error: 'Send your Garmin Personal API key as "Authorization: Bearer <key>".' }, 401);
         }
+        // Keyed by a hash of the Garmin key, so one caller cannot use up the service for everyone else.
+        if (await throttled(env?.MCP_LIMIT, await sha256(key))) return tooMany();
         const response = await mcp.fetch(request, { authInfo: { token: key, clientId: 'garmin-personal-api-key', scopes: [] } });
         const secured = new Response(response.body, response);
         for (const [name, value] of Object.entries(headers())) secured.headers.set(name, value);
@@ -100,6 +113,8 @@ export function createWorker({ fetchImpl = fetch } = {}) {
           || /[\r\n]/.test(authorization) || authorization.split(' ').length !== 2 || !authorization.split(' ')[1]) {
           return json({ error: 'Missing Garmin credential.' }, 401);
         }
+        // The browser sends a new short-lived token on every sync, so visitors are told apart by IP address here.
+        if (await throttled(env?.RELAY_LIMIT, request.headers.get('CF-Connecting-IP') || 'unknown')) return tooMany();
         const client = new GarminClient(null, { fetchImpl, signal: request.signal });
         try {
           if (operation === 'token') {
@@ -110,9 +125,11 @@ export function createWorker({ fetchImpl = fetch } = {}) {
           }
           const [path, params] = upstreamRoute(operation, query);
           const suffix = new URLSearchParams(params).toString();
-          // One upstream call per proxy request; the browser handles pacing and bounded retries.
-          const value = await client.request(path + (suffix ? '?' + suffix : ''), { headers: { Authorization: authorization } }, 2);
-          return value == null ? new Response(null, { status: 204, headers: headers() }) : json(value);
+          // One upstream call per proxy request; the browser handles pacing and bounded retries. The body is relayed
+          // as text: the browser parses and filters it, so parsing it here too would only spend Worker CPU time.
+          const body = await client.request(path + (suffix ? '?' + suffix : ''), { responseFormat: 'text', headers: { Authorization: authorization } }, 2);
+          return body.trim() ? new Response(body, { headers: headers({ 'Content-Type': 'application/json; charset=utf-8' }) })
+            : new Response(null, { status: 204, headers: headers() });
         } finally { client.dispose(); }
       }
       if (url.pathname.startsWith('/api/')) return json({ error: 'Not found.' }, 404);
