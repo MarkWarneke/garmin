@@ -1,6 +1,7 @@
 // UI patterns adapted from HyperUI (MIT). See THIRD_PARTY_NOTICES.md.
 import { withLocalSnapshotLink, withLocalFolderReference, localSnapshotLocation } from './shared/handoff.mjs';
 import { PROFILE_FIELDS, normalizeProfile, profilePrompt, planHandoff } from './shared/profile.mjs';
+import { planDays, stepsText, formCheckPrompt } from './shared/plan.mjs';
 const $ = (selector) => document.querySelector(selector);
 const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const glyphs = {
@@ -41,7 +42,7 @@ const numeric = (n, decimals = 0) => n == null ? '—' : n.toLocaleString('en-GB
 const km = meters => meters == null ? '—' : (meters / 1000).toLocaleString('en-GB', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 const dayLabel = (day, options = { day: 'numeric', month: 'short' }) => new Intl.DateTimeFormat('en-GB', options).format(new Date(day + 'T12:00:00Z'));
 const shiftDay = (day, n) => { const d = new Date(day + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
-let data, bootstrap, range = 30, busy = false, lastError = '', activitySearch = '', activitySport = 'all';
+let data, bootstrap, planInfo = { plan: null, error: null }, range = 30, busy = false, lastError = '', activitySearch = '', activitySport = 'all';
 let memoryKey = '', activeSync = null, cloudWorkspace = null;
 const session = {
   get: name => { try { return sessionStorage.getItem(name); } catch { return null; } },
@@ -95,6 +96,7 @@ async function api(path) {
     const url = new URL(path, location.origin), days = Number(url.searchParams.get('days') || range);
     if (url.pathname === '/api/data' || url.pathname === '/api/export') return cloudWorkspace.data(days);
     if (url.pathname === '/api/briefing') return cloudWorkspace.briefing(days);
+    if (url.pathname === '/api/plan') return cloudWorkspace.plan();
   }
   const response = await localFetch(path, { cache: 'no-store' });
   const value = await response.json();
@@ -252,11 +254,35 @@ function planCards() {
     : ['Run your first sync.', 'Download your recent training and recovery history to give the plan context.', '<button class="button button-secondary" id="full-sync">Sync Garmin ↻</button>'];
   return `<div class="split-bottom"><section class="card panel"><h2>${title}</h2><p>${text}</p><div class="export-actions">${action}</div></section>${planCard}</div>`;
 }
+function planEntry({ title, sport, minutes, details = [], garmin, activity, status }) {
+  const kind = category(sport || garmin?.sport || activity?.sport || 'other');
+  const done = activity ? `✓ Done · ${duration(activity.durationSeconds)}${activity.normalizedPower ? ` · ${numeric(activity.normalizedPower)} W NP` : ''}${activity.averageHeartRate ? ` · ${numeric(activity.averageHeartRate)} bpm` : ''}${activity.rpe != null ? ` · RPE ${numeric(activity.rpe, 1)}` : ''}` : '';
+  const steps = stepsText(garmin?.steps);
+  return `<li class="plan-entry"><span class="activity-icon ${kind}">${icon(kind)}</span><div><div class="plan-entry-title"><strong>${escapeHtml(title)}</strong>${minutes ? `<span>${duration(minutes * 60)}</span>` : ''}${garmin ? '<span class="pill">GARMIN</span>' : ''}${status && status !== 'planned' ? `<span class="pill">${escapeHtml(status.toUpperCase())}</span>` : ''}</div>${details.filter(Boolean).map(d => `<p>${escapeHtml(d)}</p>`).join('')}${steps ? `<p class="plan-steps">${escapeHtml(steps)}</p>` : ''}${done ? `<p class="plan-done">${escapeHtml(done)}</p>` : ''}</div></li>`;
+}
 function plan() {
-  const end = data.range.endDate, weekday = new Date(end + 'T12:00:00Z').getUTCDay();
-  const monday = shiftDay(end, -((weekday + 6) % 7));
+  const today = data.range.endDate, weekday = new Date(today + 'T12:00:00Z').getUTCDay();
+  const monday = shiftDay(today, -((weekday + 6) % 7));
+  const saved = planInfo.plan, planned = data.planned || [];
+  // From this week to the end of the saved plan or the last scheduled Garmin workout, at most eight weeks.
+  const last = [saved?.endDate, saved?.sessions.at(-1)?.date, planned.at(-1)?.date, shiftDay(monday, 6)].filter(Boolean).sort().at(-1);
+  const weeks = Math.min(8, Math.ceil((Date.parse(last + 'T12:00:00Z') - Date.parse(monday + 'T12:00:00Z')) / 604800000 + 1 / 7));
+  const days = planDays({ plan: saved, planned, activities: data.activities }, Array.from({ length: weeks * 7 }, (_, i) => shiftDay(monday, i)));
+  const empty = !saved?.sessions.length && !planned.some(w => w.date >= monday);
+  const badge = saved ? `PLAN${saved.author ? ' · ' + escapeHtml(saved.author.toUpperCase()) : ''}` : planned.length ? 'GARMIN CALENDAR' : 'NO PLAN YET';
+  const summary = saved ? `<div class="plan-summary">${saved.goal ? `<p><strong>Goal</strong> ${escapeHtml(saved.goal)}</p>` : ''}${saved.notes ? `<p>${escapeHtml(saved.notes)}</p>` : ''}<p class="field-hint">${saved.startDate ? `${dayLabel(saved.startDate)} – ${dayLabel(saved.endDate || saved.sessions.at(-1)?.date || saved.startDate)} · ` : ''}from ${escapeHtml(bootstrap.planFile || 'plan.json')}${saved.updatedAt ? ` · updated ${escapeHtml(new Date(saved.updatedAt).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' }))}` : ''}</p></div>` : '';
+  const calendar = Array.from({ length: weeks }, (_, w) => {
+    const week = days.slice(w * 7, w * 7 + 7), info = saved?.weeks.find(x => x.startDate >= week[0].date && x.startDate <= week[6].date);
+    return `<div class="plan-week"><div class="plan-week-head"><strong>${dayLabel(week[0].date)} – ${dayLabel(week[6].date)}</strong>${info?.focus ? `<span>${escapeHtml(info.focus)}</span>` : ''}${info?.targetHours != null ? `<span class="pill">${numeric(info.targetHours, 1)} H</span>` : ''}</div>${info?.notes ? `<p class="plan-week-notes">${escapeHtml(info.notes)}</p>` : ''}<ul class="plan-days">${week.map(d => {
+      const entries = [...d.sessions.map(s => planEntry({ title: s.title || sportLabel(s.sport), sport: s.sport, minutes: s.durationMinutes, details: [s.intensity, s.purpose, s.notes], garmin: s.garmin, activity: s.activity, status: s.status })),
+        ...d.workouts.map(({ garmin, activity }) => planEntry({ title: garmin.name, sport: garmin.sport, minutes: garmin.durationSeconds ? garmin.durationSeconds / 60 : null, details: [garmin.description], garmin, activity })),
+        ...d.activities.map(a => planEntry({ title: a.name, sport: a.sport, details: ['Recorded, not planned'], activity: a }))];
+      return `<li class="plan-day ${d.date === today ? 'today' : ''}"><div class="plan-date"><span>${dayLabel(d.date, { weekday: 'short' })}</span><b>${dayLabel(d.date, { day: 'numeric' })}</b></div>${entries.length ? `<ul class="plan-entries">${entries.join('')}</ul>` : '<span class="plan-rest">—</span>'}</li>`;
+    }).join('')}</ul></div>`;
+  }).join('');
   return heading('A PLAN THAT FITS YOUR LIFE', 'Your next block starts here.', 'Tell ChatGPT or Claude what your data can’t, and get a plan built around your goals.', false)
-    + `<section class="card"><div class="card-heading"><div><h2>Your training calendar</h2><p class="sub">${dayLabel(monday)} – ${dayLabel(shiftDay(monday, 6))}</p></div><span class="pill orange">NO PLAN YET</span></div><div class="timeline">${Array.from({ length: 7 }, (_, i) => { const date = shiftDay(monday, i); return `<div class="calendar-day"><span>${dayLabel(date, { weekday: 'short' })}</span><b>${dayLabel(date, { day: 'numeric' })}</b><i></i></div>`; }).join('')}</div><div class="calendar-note"><strong>Good plans begin with a conversation.</strong>Create a plan prompt below and talk it through with ChatGPT or Claude: your goals, available time, and how bike, gym, and bouldering fit together.</div></section>` + planCards();
+    + (planInfo.error ? `<div class="warning error-banner" role="alert">${escapeHtml(planInfo.error)}</div>` : '')
+    + `<section class="card"><div class="card-heading"><div><h2>${escapeHtml(saved?.title || 'Your training calendar')}</h2><p class="sub">${dayLabel(monday)} – ${dayLabel(shiftDay(monday, weeks * 7 - 1))}</p></div><div class="pill-group"><span class="pill orange">${badge}</span><button class="button button-secondary" data-form-check ${!data.sync ? 'disabled' : ''} title="Copy a prompt that checks today's planned workout against your latest recovery data">Today's form ↗</button></div></div><div class="card-inner plan-body">${summary}${calendar}</div>${empty ? '<div class="calendar-note"><strong>Good plans begin with a conversation.</strong>Create a plan prompt below and talk it through with ChatGPT or Claude. Workouts scheduled in your Garmin calendar appear here after the next sync, and an assistant with file access can save its plan as plan.json next to your data.</div>' : ''}</section>` + planCards();
 }
 // Setup is ready when data can be saved (folder or local server), a Garmin key is saved, and the last sync succeeded.
 function setupState() {
@@ -356,9 +382,11 @@ function render() {
 }
 async function reload() {
   data = await api(`/api/data?days=${range}`);
+  // A missing or broken plan.json must not hide the rest of the dashboard.
+  try { planInfo = await api('/api/plan'); } catch (error) { planInfo = { plan: null, error: error.message }; }
   if (cloudWorkspace) {
     const folder = cloudWorkspace.name || 'your selected Cadence folder';
-    bootstrap.dataFile = folder + '/snapshot.json'; bootstrap.profileFile = folder + '/profile.json';
+    bootstrap.dataFile = folder + '/snapshot.json'; bootstrap.profileFile = folder + '/profile.json'; bootstrap.planFile = folder + '/plan.json';
   }
   render();
 }
@@ -509,6 +537,7 @@ document.addEventListener('click', async event => {
   if (button.dataset.close) $('#' + button.dataset.close).close();
   if (button.dataset.activity) showActivity(button.dataset.activity);
   if (button.hasAttribute('data-plan')) await openPlan();
+  if (button.hasAttribute('data-form-check')) await copyFormCheck();
   if (button.id === 'snapshot-info') $('#snapshot-info-dialog').showModal();
   if (button.id === 'reset-prompt') { promptEdited = false; updatePrompt(); $('#plan-prompt').focus(); }
   if (button.id === 'save-profile') {
@@ -551,6 +580,15 @@ $('#connect-form').addEventListener('submit', async event => {
   session.set('cadence.syncDays', days); $('#api-key').value = ''; $('#connect-dialog').close(); await sync({ key, days });
 });
 $('#connect-dialog').addEventListener('close', () => { $('#api-key').value = ''; });
+// Uses four weeks of data regardless of the selected range: the check needs a recent norm to compare last night with.
+async function copyFormCheck() {
+  try {
+    const [recent, profile] = await Promise.all([api('/api/data?days=28'), profileApi.load()]);
+    let text = formCheckPrompt({ data: recent, plan: planInfo.plan, profile });
+    if (includeSnapshotLink) text = withSnapshotReference(text);
+    await copy(text);
+  } catch (error) { notify(error.message || 'Could not prepare the prompt.', true); }
+}
 $('#plan-form').addEventListener('submit', async event => {
   event.preventDefault(); $('#plan-error').hidden = true;
   const prompt = $('#plan-prompt').value;

@@ -66,6 +66,15 @@ function upstreamRoute(name, query) {
     if (typeof query.activityId !== 'string' || !/^\d{1,20}$/.test(query.activityId)) throw new GarminError('Invalid activity.', 400);
     return [`/activity-service/activity/${query.activityId}${name === 'workouts' ? '/workouts' : ''}`, {}];
   }
+  if (name === 'calendar') {
+    // Calendar months are numbered from 0, as Garmin expects them.
+    if (!/^\d{4}$/.test(query.year) || !/^\d{1,2}$/.test(query.month) || Number(query.month) > 11) throw new GarminError('Invalid calendar month.', 400);
+    return [`/calendar-service/year/${query.year}/month/${Number(query.month)}`, {}];
+  }
+  if (name === 'workout') {
+    if (typeof query.workoutId !== 'string' || !/^\d{1,20}$/.test(query.workoutId)) throw new GarminError('Invalid workout.', 400);
+    return [`/workout-service/workout/${query.workoutId}`, {}];
+  }
   const dates = range(query);
   if (name === 'weight') return [`/weight-service/weight/range/${dates.startDate}/${dates.endDate}`, {}];
   if (name === 'daily') return ['/usersummary-service/v2/dailysummaries', dates];

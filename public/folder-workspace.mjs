@@ -1,6 +1,7 @@
 import { emptySnapshot, selectData, briefing } from './shared/model.mjs';
 import { syncGarmin, GarminError } from './shared/garmin.mjs';
 import { emptyProfile, normalizeProfile } from './shared/profile.mjs';
+import { normalizePlan, PLAN_FILE } from './shared/plan.mjs';
 
 const FILE = 'snapshot.json';
 async function fingerprint(file) {
@@ -46,6 +47,14 @@ export async function writeProfile(directory, profile) {
   catch (error) { await writable.abort().catch(() => {}); throw error; }
   return saved;
 }
+// plan.json is written by an assistant with file access; Cadence only reads it.
+export async function readPlan(directory) {
+  let file;
+  try { file = await (await directory.getFileHandle(PLAN_FILE)).getFile(); }
+  catch (error) { if (error.name === 'NotFoundError') return { plan: null, error: null }; throw error; }
+  try { return { plan: normalizePlan(JSON.parse(await file.text())), error: null }; }
+  catch { return { plan: null, error: 'plan.json is not valid JSON. Ask the assistant to write it again.' }; }
+}
 async function rememberedHandle(value) {
   // IndexedDB holds only a directory permission handle, never Garmin keys or training records.
   return new Promise((resolve, reject) => {
@@ -83,6 +92,10 @@ export function createProxyFetch(fetchImpl = fetch) {
     if (weight) { operation = 'weight'; query = { startDate: weight[1], endDate: weight[2] }; }
     const activity = url.pathname.match(/^\/activity-service\/activity\/(\d{1,20})(\/workouts)?$/);
     if (activity) { operation = activity[2] ? 'workouts' : 'details'; query = { activityId: activity[1] }; }
+    const calendar = url.pathname.match(/^\/calendar-service\/year\/(\d{4})\/month\/(\d{1,2})$/);
+    if (calendar) { operation = 'calendar'; query = { year: calendar[1], month: calendar[2] }; }
+    const workout = url.pathname.match(/^\/workout-service\/workout\/(\d{1,20})$/);
+    if (workout) { operation = 'workout'; query = { workoutId: workout[1] }; }
     if (!operation) throw new GarminError('Unsupported Garmin operation.', 400);
     let response;
     try {
@@ -126,6 +139,7 @@ export class FolderWorkspace {
   async data(days) { return selectData(await this.snapshot(), days); }
   async briefing(days) { return { text: briefing(await this.data(days)) }; }
   async profile() { return this.connected ? readProfile(this.directory) : emptyProfile(); }
+  async plan() { return this.connected ? readPlan(this.directory) : { plan: null, error: null }; }
   async saveProfile(profile) {
     if (!this.connected) throw new Error('Choose your local data folder to save your profile.');
     if (await this.directory.queryPermission({ mode: 'readwrite' }) !== 'granted') throw new Error('Reconnect your data folder to allow saving.');

@@ -22,6 +22,19 @@ export const details = () => ({ activityId: 1, userProfileId: 1234, summaryDTO: 
   { splitType: 'INTERVAL_REST', noOfSplits: 4, duration: 600, averagePower: 120 }] });
 export const workouts = () => [{ workoutName: '5x5 VO2', steps: [{ stepIndex: 1, intensity: 'INTERVAL', durationType: 'TIME',
   durationValue: 300, targetType: 'POWER', targetValueLow: 255, targetValueHigh: 270 }] }];
+export const calendar = (day = '2026-11-17') => ({ calendarItems: [
+  { id: 901, itemType: 'workout', date: day, title: 'Tempo 3x6', workoutId: 77, sportTypeKey: 'cycling' },
+  { id: 902, itemType: 'activity', date: day, title: 'Evening ride' }] });
+export const garminWorkout = () => ({ workoutId: 77, workoutName: 'Tempo 3x6', description: 'Gentle tempo', ownerId: 1234,
+  sportType: { sportTypeId: 2, sportTypeKey: 'cycling' },
+  workoutSegments: [{ workoutSteps: [
+    { type: 'ExecutableStepDTO', stepType: { stepTypeKey: 'warmup' }, endCondition: { conditionTypeKey: 'time' }, endConditionValue: 600,
+      targetType: { workoutTargetTypeKey: 'power.zone' }, targetValueOne: 120, targetValueTwo: 150 },
+    { type: 'RepeatGroupDTO', numberOfIterations: 3, workoutSteps: [
+      { type: 'ExecutableStepDTO', stepType: { stepTypeKey: 'interval' }, endCondition: { conditionTypeKey: 'time' }, endConditionValue: 360,
+        targetType: { workoutTargetTypeKey: 'power.zone' }, targetValueOne: 190, targetValueTwo: 205 },
+      { type: 'ExecutableStepDTO', stepType: { stepTypeKey: 'recovery' }, endCondition: { conditionTypeKey: 'time' }, endConditionValue: 300,
+        targetType: { workoutTargetTypeKey: 'no.target' } }] }] }] });
 export const response = (data, status = 200, headers) => new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json', ...headers } });
 export function mockGarmin(handler) {
   const calls = [];
@@ -39,6 +52,8 @@ export function mockGarmin(handler) {
     if (parsed.pathname.includes('/weight/range/')) return response(weight());
     if (/\/activity-service\/activity\/\d+$/.test(parsed.pathname)) return response(details());
     if (/\/activity-service\/activity\/\d+\/workouts$/.test(parsed.pathname)) return response(workouts());
+    if (/^\/calendar-service\/year\/\d{4}\/month\/\d{1,2}$/.test(parsed.pathname)) return response(calendar());
+    if (/^\/workout-service\/workout\/\d+$/.test(parsed.pathname)) return response(garminWorkout());
     throw new Error(`Unexpected test endpoint: ${parsed.pathname}`);
   };
   return { fetchImpl, calls };

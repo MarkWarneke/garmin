@@ -19,10 +19,10 @@ Cadence runs in one of two modes. Both use the same UI and save the same files.
 The data flow is the same in both modes:
 
 1. **Your key stays in your browser.** The Garmin Personal API key is saved in the browser's `localStorage` for this site, so you enter it once. It is never written to a file or sent anywhere except Garmin. **Forget key** removes it. Anyone with access to your browser profile can use it, so forget it on shared computers.
-2. **Cadence talks to Garmin.** The key is exchanged for a short-lived access token, then activities, activity details, daily summaries, sleep, HRV, and training settings are downloaded. In hosted mode, each request passes through the Worker because Garmin does not accept requests from web pages directly. The Worker forwards a fixed allowlist of Garmin operations, stores nothing, and has no database or request logging.
+2. **Cadence talks to Garmin.** The key is exchanged for a short-lived access token, then activities, activity details, daily summaries, sleep, HRV, training settings, and the workouts scheduled in your Garmin calendar are downloaded. In hosted mode, each request passes through the Worker because Garmin does not accept requests from web pages directly. The Worker forwards a fixed allowlist of Garmin operations, stores nothing, and has no database or request logging.
    It relays Garmin's **complete** responses; the browser filters them before saving. Besides training data, these responses can contain the start and end coordinates of outdoor activities (and of each interval type), the place name, the activity description, your Garmin display name and profile ID, sensor serial numbers, and weight details such as BMI and body fat. They never contain full GPS tracks. Cloudflare processes them in memory during the sync. Run Cadence locally if no third party should see them.
 3. **Only normalized summaries are saved** to `snapshot.json`. No coordinates, place names, GPS routes, FIT files, account details, names, IDs, or credentials.
-4. **Your athlete profile** (goal, FTP, availability, restrictions) is saved separately in `profile.json`, next to `snapshot.json`. A sync never touches it.
+4. **Your athlete profile** (goal, FTP, availability, restrictions) is saved separately in `profile.json`, next to `snapshot.json`. A sync never touches it. An assistant's plan can be saved as `plan.json` in the same folder; Cadence only reads it.
 5. **You decide what an assistant sees.** The Training plan dialog builds a prompt you can read and edit before copying it.
 
 ### Syncing
@@ -70,6 +70,31 @@ Open **Training plan → Create plan prompt**:
 2. Review the generated prompt and edit it if you like. Your answers and edits are saved to `profile.json`.
 3. Copy it. Cadence adds your Garmin data for the selected range below the prompt.
 
+### Your plan in Cadence
+
+**Training plan** shows a calendar from this week to the end of your plan (at most eight weeks). It combines three sources:
+
+- **Garmin calendar.** Every sync reads the workouts scheduled from a week ago to eight weeks ahead, with their steps and power targets, and saves them as `planned` in `snapshot.json`. Entries removed in Garmin disappear on the next sync. If Garmin does not offer the calendar for your Personal API key, the sync shows one `planned` warning and keeps everything else.
+- **`plan.json`, written by an assistant.** The generated prompt asks the assistant to save its plan as `plan.json` next to `snapshot.json` when it can write files (desktop app with file access, Claude Code, Codex). It adds what Garmin cannot hold: the goal, notes on adjusting to recovery, a focus and target hours per week, and per session the intensity and purpose. A session with `garminWorkoutId` is linked to that scheduled Garmin workout and shows its steps; otherwise a scheduled workout of the same sport on that day is used.
+- **Recorded activities.** A recorded activity of the same sport on a planned day is shown as done, with duration, normalized power, heart rate, and RPE.
+
+`plan.json` format (every field is optional except `date` and `title` or `sport` per session; unknown fields are dropped, text is length-limited and shown as plain text):
+
+```json
+{
+  "version": 1, "title": "Winter base", "goal": "Keep fitness, build base", "startDate": "2026-11-23", "endDate": "2026-12-20",
+  "author": "Claude", "updatedAt": "2026-11-21T15:00:00Z", "notes": "How to adjust when recovery drops.",
+  "weeks": [{ "startDate": "2026-11-23", "focus": "Return after illness", "targetHours": 5.5, "notes": "" }],
+  "sessions": [{ "date": "2026-11-24", "sport": "cycling", "title": "Tempo 3x6 min", "durationMinutes": 60,
+    "intensity": "190–205 W, HR ≤165", "purpose": "Gentle tempo stimulus", "garminWorkoutId": "1768732566",
+    "status": "planned", "notes": "" }]
+}
+```
+
+**Today's form** on the Training plan page copies a prompt for a daily check: today's planned session (with its Garmin steps) and the next three days, two weeks of sleep, HRV, resting heart rate, Body Battery and stress, training load, and recent sessions with RPE. The assistant compares last night with your recent norm, sets today's focus, and keeps, adjusts, or replaces the session with concrete targets. With file access it notes the change in `plan.json`.
+
+`status` is one of `planned`, `done`, `skipped`, or `moved`. An invalid `plan.json` is reported on the page and never blocks the rest of the dashboard.
+
 **Include local snapshot link** is for the ChatGPT or Claude desktop app on the same computer with local file access allowed. It adds a `file://` link to the complete `snapshot.json` and `profile.json` (local mode), or names your selected folder (hosted mode, because browsers do not reveal full folder paths).
 
 ### Optional: MCP access for desktop assistants
@@ -81,7 +106,7 @@ Command: /absolute/path/to/node
 Arguments: /absolute/path/to/cadence/src/mcp.mjs
 ```
 
-Both paths are shown under **Data & connection** in the local app. Tools: `garmin_sync_status`, `garmin_training_overview`, `garmin_activities`, `garmin_health_trends`, and `athlete_profile`.
+Both paths are shown under **Data & connection** in the local app. Tools: `garmin_sync_status`, `garmin_training_overview`, `garmin_activities`, `garmin_health_trends`, `athlete_profile`, `training_plan` (`plan.json` merged with scheduled Garmin workouts and recorded activities), and `todays_form` (the daily check described above).
 
 ### Optional: remote MCP endpoint on the hosted Worker
 
@@ -91,7 +116,7 @@ The hosted app also serves a stateless, read-only MCP endpoint at `https://<your
 claude mcp add --transport http cadence https://<your-worker>/mcp --header "Authorization: Bearer $GARMIN_PERSONAL_API_KEY"
 ```
 
-Keep the key in your client's MCP configuration or an environment variable, not in chat. Tools: `garmin_activities`, `garmin_activity_details`, `garmin_health` (up to 31 days), and `garmin_athlete`. Each tool call makes a token exchange plus one or more Garmin requests, so ask for short ranges. Results omit coordinates, place names, account IDs, and the Garmin display name. The endpoint cannot read your saved folder or profile.
+Keep the key in your client's MCP configuration or an environment variable, not in chat. Tools: `garmin_activities`, `garmin_activity_details`, `garmin_health` (up to 31 days), `garmin_athlete`, `garmin_planned_workouts` (scheduled workouts with steps, up to 56 days), and `garmin_todays_form` (the daily check from live data, without `plan.json` or the profile). Each tool call makes a token exchange plus one or more Garmin requests, so ask for short ranges. Results omit coordinates, place names, account IDs, and the Garmin display name. The endpoint cannot read your saved folder or profile.
 
 ## Fork and run your own copy
 

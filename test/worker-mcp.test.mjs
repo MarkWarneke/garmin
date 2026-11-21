@@ -19,7 +19,7 @@ test('remote MCP endpoint serves live, normalized Garmin data with the caller ke
   const mock = mockGarmin(); const worker = createWorker(mock);
   const client = await connect(worker); t.after(() => client.close());
   const { tools } = await client.listTools();
-  assert.deepEqual(tools.map(tool => tool.name).sort(), ['garmin_activities', 'garmin_activity_details', 'garmin_athlete', 'garmin_health']);
+  assert.deepEqual(tools.map(tool => tool.name).sort(), ['garmin_activities', 'garmin_activity_details', 'garmin_athlete', 'garmin_health', 'garmin_planned_workouts', 'garmin_todays_form']);
   assert.ok(tools.every(tool => tool.annotations.readOnlyHint === true && tool.annotations.destructiveHint === false));
   assert.equal(mock.calls.length, 0);
 
@@ -67,4 +67,16 @@ test('health tool keeps partial results when one Garmin source fails', async t =
   const health = read(await client.callTool({ name: 'garmin_health', arguments: { days: 1, endDate: '2026-11-16' } }));
   assert.equal(health.health[0].sleepScore, 85); assert.equal(health.health[0].hrvMs, undefined);
   assert.deepEqual(health.warnings.map(w => w.source), ['hrv']);
+});
+
+test('remote MCP reads scheduled workouts and prepares today\'s form check from live data', async t => {
+  const mock = mockGarmin(); const worker = createWorker(mock);
+  const client = await connect(worker); t.after(() => client.close());
+  const planned = read(await client.callTool({ name: 'garmin_planned_workouts', arguments: { days: 7, startDate: '2026-11-16' } }));
+  assert.deepEqual(planned.planned.map(w => [w.date, w.name, w.durationSeconds]), [['2026-11-17', 'Tempo 3x6', 2580]]);
+  assert.equal(planned.planned[0].steps[1].repeat, 3);
+  const form = await client.callTool({ name: 'garmin_todays_form', arguments: {} });
+  assert.match(form.content[0].text, /Please check my form today/);
+  assert.match(form.content[0].text, /"health": \[/);
+  assert.doesNotMatch(form.content[0].text, /test-personal-key|test-access-token/);
 });

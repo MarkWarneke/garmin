@@ -1,12 +1,20 @@
 import { dateChunks, isoDay, shiftDay, validDay, normalizeActivity, normalizeDaily, normalizeSleep, normalizeHrv,
-  normalizeActivityDetails, normalizeAthlete, mergeRecords } from './model.mjs';
+  normalizeActivityDetails, normalizeAthlete, normalizeScheduledWorkout, normalizeWorkout, mergeRecords } from './model.mjs';
 
 const API = 'https://personal.connectapi.garmin.com';
 // Bump when normalizeActivity keeps new fields, so the next sync re-downloads older activities once.
 export const ACTIVITY_FIELDS = 2;
 // Activity details cost one request each; they are fetched once per activity and spread over syncs.
 export const DETAILS_PER_SYNC = 150;
-const DETAIL_INTERVALS = /^(INTERVAL_|WORKOUT_ROUND|RUN_ACTIVE|RUN_REST)/;
+// Scheduled workouts are read from a week ago to this many days ahead; each workout's steps cost one request.
+export const PLAN_DAYS = 56;
+const PLAN_WORKOUTS = 40;
+export function calendarMonths(from, to) {
+  const months = [];
+  for (let month = from.slice(0, 7); month <= to.slice(0, 7); month = shiftDay(`${month}-28`, 7).slice(0, 7)) months.push(month);
+  return months;
+}
+const DETAIL_INTERVALS =/^(INTERVAL_|WORKOUT_ROUND|RUN_ACTIVE|RUN_REST)/;
 const TOKEN_PATH = '/personalapitoken-service/personal-api/personal-api-key/token';
 export class GarminError extends Error {
   constructor(message, status = 502) { super(message); this.status = status; }
@@ -197,6 +205,47 @@ export async function syncGarmin(snapshot, key, { days = 90, full = false, now =
       catch (e) { recordFailure(name, now, now, e); }
       completed++;
       await pause(120, signal);
+    }
+    // The calendar is read again on every sync: entries can be moved or removed at any time.
+    const planFrom = shiftDay(now, -7), planTo = shiftDay(now, PLAN_DAYS);
+    const months = calendarMonths(planFrom, planTo);
+    total += months.length;
+    let scheduled = [], calendarComplete = true;
+    for (const month of months) {
+      progress(`Downloading planned workouts · ${month}`);
+      try {
+        // Garmin numbers calendar months from 0.
+        const data = await client.get(`/calendar-service/year/${month.slice(0, 4)}/month/${Number(month.slice(5)) - 1}`);
+        scheduled.push(...arrayResponse(data, 'calendarItems', 'calendar').map(normalizeScheduledWorkout)
+          .filter(w => w && w.date >= planFrom && w.date <= planTo));
+      } catch (e) {
+        calendarComplete = false; recordFailure('planned', `${month}-01`, `${month}-28`, e);
+        // Denied or unknown for one month means the same for the others: one warning is enough.
+        if ([403, 404].includes(e.status)) { completed += months.length - months.indexOf(month); break; }
+      }
+      completed++;
+      await pause(120, signal);
+    }
+    const workoutIds = [...new Set(scheduled.map(w => w.workoutId).filter(Boolean))].slice(0, PLAN_WORKOUTS);
+    total += workoutIds.length;
+    const workoutDetails = new Map((result.planned || []).filter(w => w.workoutId && w.steps)
+      .map(({ workoutId, sport, description, durationSeconds, steps }) => [workoutId, { sport, description, durationSeconds, steps }]));
+    for (const id of workoutIds) {
+      progress('Downloading planned workout steps…');
+      try { workoutDetails.set(id, normalizeWorkout(await client.get(`/workout-service/workout/${encodeURIComponent(id)}`))); }
+      catch (e) { recordFailure('planned', planFrom, planTo, e); }
+      completed++;
+      await pause(120, signal);
+    }
+    if (calendarComplete) {
+      // Replaces the calendar window, keeps a year of earlier plans to compare against what was done.
+      const fresh = scheduled.map(w => {
+        const details = workoutDetails.get(w.workoutId);
+        return details ? { ...w, ...details, sport: details.sport || w.sport } : w;
+      });
+      result.planned = mergeRecords((result.planned || []).filter(w => w.date < planFrom && w.date >= shiftDay(now, -365)), fresh, 'id')
+        .sort((a, b) => a.date.localeCompare(b.date));
+      attempt.coverage.push({ source: 'planned', startDate: planFrom, endDate: planTo, records: fresh.length });
     }
     const queue = pending();
     total += queue.length;

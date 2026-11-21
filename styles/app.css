@@ -251,11 +251,31 @@
   .dialog-actions { @apply sticky -bottom-6 -mx-6 mt-6 flex flex-wrap items-center justify-end gap-3 border-t border-gray-200 bg-white px-6 py-4 sm:-bottom-8 sm:-mx-8 sm:px-8; }
   .dialog-actions .field-hint { @apply mt-0 mr-auto; }
   .info-list { @apply mt-4 list-disc space-y-2 pl-5 text-xs/6 text-gray-600; }
-  .timeline { @apply mt-6 grid min-h-48 grid-cols-7 overflow-x-auto border-t border-gray-200; }
-  .calendar-day { @apply min-w-10 border-r border-gray-200 px-2 py-4 last:border-r-0 sm:px-4; }
-  .calendar-day span { @apply block text-[10px] text-gray-500; }
-  .calendar-day b { @apply mt-2 block text-lg font-medium; }
-  .calendar-day i { @apply mt-9 block h-1 w-4 rounded-full bg-gray-200; }
+  .plan-body { @apply pt-2 sm:pt-2; }
+  .plan-summary { @apply space-y-2 text-xs/6 text-gray-600; }
+  .plan-body > .plan-week:first-child { @apply mt-0 border-t-0 pt-0; }
+  .plan-summary strong { @apply mr-1 font-medium text-gray-800; }
+  .plan-week { @apply mt-6 border-t border-gray-200 pt-4; }
+  .plan-week-head { @apply flex flex-wrap items-center gap-2 text-sm; }
+  .plan-week-head strong { @apply font-medium text-gray-900; }
+  .plan-week-head span:not(.pill) { @apply text-xs text-gray-500; }
+  .plan-week-notes { @apply mt-1 text-xs/6 text-gray-500; }
+  .plan-days { @apply mt-2 divide-y divide-gray-100; }
+  .plan-day { @apply flex gap-4 py-3; }
+  .plan-day.today { @apply -mx-2 rounded-lg bg-orange-50 px-2; }
+  .plan-date { @apply w-10 shrink-0; }
+  .plan-date span { @apply block text-[10px] text-gray-500; }
+  .plan-date b { @apply block text-lg font-medium; }
+  .plan-rest { @apply self-center text-xs text-gray-300; }
+  .plan-entries { @apply min-w-0 flex-1 space-y-3; }
+  .plan-entry { @apply flex min-w-0 gap-3; }
+  .plan-entry > div { @apply min-w-0 flex-1; }
+  .plan-entry p { @apply mt-0.5 text-xs/5 break-words text-gray-500; }
+  .plan-entry-title { @apply flex flex-wrap items-center gap-2 text-sm; }
+  .plan-entry-title strong { @apply font-medium text-gray-900; }
+  .plan-entry-title span:not(.pill) { @apply text-xs text-gray-500 tabular-nums; }
+  .plan-entry p.plan-steps { @apply font-mono text-[11px] text-gray-600; }
+  .plan-entry p.plan-done { @apply text-emerald-700; }
   .calendar-note { @apply border-t border-gray-200 px-5 py-7 text-center text-xs/7 text-gray-500; }
   .calendar-note strong { @apply mb-2 block text-base font-medium text-gray-800; }
   .detail-grid { @apply mt-6 grid grid-cols-2 gap-3; }

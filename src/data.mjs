@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { resolve, join } from 'node:path';
 import { emptySnapshot } from '../public/shared/model.mjs';
 import { emptyProfile, normalizeProfile } from '../public/shared/profile.mjs';
+import { normalizePlan, PLAN_FILE } from '../public/shared/plan.mjs';
 
 export const projectDir = fileURLToPath(new URL('../', import.meta.url));
 export const dataDir = resolve(process.env.CADENCE_DATA_DIR || join(projectDir, 'data'));
@@ -41,6 +42,15 @@ export async function saveProfile(profile, directory = dataDir) {
   const saved = normalizeProfile({ ...profile, updatedAt: new Date().toISOString() });
   await writePrivate(directory, 'profile', saved);
   return saved;
+}
+// plan.json is written by an assistant, never by Cadence. A broken file is reported, not fatal.
+export async function loadPlan(directory = dataDir) {
+  try { return { plan: normalizePlan(JSON.parse(await readFile(join(directory, PLAN_FILE), 'utf8'))), error: null }; }
+  catch (e) {
+    if (e.code === 'ENOENT') return { plan: null, error: null };
+    if (e instanceof SyntaxError) return { plan: null, error: 'plan.json is not valid JSON. Ask the assistant to write it again.' };
+    throw e;
+  }
 }
 
 export * from '../public/shared/model.mjs';

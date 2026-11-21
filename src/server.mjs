@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { loadSnapshot, saveSnapshot, loadProfile, saveProfile, selectData, briefing, projectDir, dataDir } from './data.mjs';
+import { loadSnapshot, saveSnapshot, loadProfile, saveProfile, loadPlan, selectData, briefing, projectDir, dataDir } from './data.mjs';
 import { syncGarmin, GarminError } from './garmin.mjs';
 
 const PUBLIC = fileURLToPath(new URL('../public/', import.meta.url));
@@ -41,7 +41,7 @@ export function createApp({ directory, fetchImpl, syncImpl = syncGarmin } = {}) 
     try {
       if (req.method === 'GET' && url.pathname === '/api/bootstrap') {
         return json(res, 200, { mode: 'local', csrf, syncing, projectDir, dataFile: join(directory || dataDir, 'snapshot.json'),
-          profileFile: join(directory || dataDir, 'profile.json'),
+          profileFile: join(directory || dataDir, 'profile.json'), planFile: join(directory || dataDir, 'plan.json'),
           nodePath: process.execPath });
       }
       if (req.method === 'GET' && ['/api/data', '/api/export', '/api/briefing'].includes(url.pathname)) {
@@ -51,6 +51,7 @@ export function createApp({ directory, fetchImpl, syncImpl = syncGarmin } = {}) 
         return json(res, 200, data);
       }
       if (req.method === 'GET' && url.pathname === '/api/profile') return json(res, 200, await loadProfile(directory));
+      if (req.method === 'GET' && url.pathname === '/api/plan') return json(res, 200, await loadPlan(directory));
       if (req.method === 'POST' && url.pathname === '/api/profile') {
         let body = '';
         for await (const chunk of req) {
